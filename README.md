@@ -9,4 +9,4 @@ Site statique servi par GitHub Pages, sans étape de compilation.
 - `accueil/` : feuilles de style, script des particules, images, rapports PDF et CV
 - `irm/` : livre *Contraste en IRM* (compilé avec MyST)
 
-AbstractViz reste sur https://perso.telecom-paristech.fr/edionnet-24/abstractviz, car son analyse d'œuvre passe par un serveur.
+AbstractViz est hébergé à part, sur Cloudflare Workers : https://abstractviz.eliott-dionnet.workers.dev/ (dépôt privé `abstractviz`), car son analyse d'œuvre passe par un serveur.
