@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..600;1,8..60,400&display=swap">
-<link rel="stylesheet" href="/accueil/accueil.css?v=10">
+<link rel="stylesheet" href="/accueil/accueil.css?v=11">
 </head>
 <body>
 <canvas id="champ" aria-hidden="true"></canvas>
@@ -37,56 +37,56 @@
   <h1>Où voulez-vous aller ?</h1>
   <ul class="menu">
     <li>
-      <a class="entree" href="/irm/" data-forme="irm" style="--c: #9fd2ff">
-        <span class="titre">Contraste en IRM</span>
-        <span class="desc">Le contraste et les séquences d'impulsion en livre interactif.</span>
-      </a>
-    </li>
-    <li>
-      <details class="depliant" data-forme="abstractviz" style="--c: #f08a9b">
+      <details class="depliant" name="theme" data-forme="irm" style="--c: #9fd2ff">
         <summary class="entree">
-          <span class="titre">AbstractViz</span>
-          <span class="desc">1&nbsp;700 peintures abstraites classées sans étiquette, la carte ou le rapport.</span>
+          <span class="titre">Imagerie</span>
+          <span class="desc">IRM, vision par ordinateur et apprentissage.</span>
         </summary>
         <ul class="sous-liens">
-          <li><a href="https://abstractviz.eliott-dionnet.workers.dev/" data-forme-sous="abstractviz">
-            <span class="s-titre">Explorer la carte</span>
-            <span class="s-ctx">Naviguer parmi les tableaux, classe par classe.</span></a></li>
-          <li><a href="https://github.com/eliottdionnet/Principaux-Rapports-D-Etudes/blob/main/Extraction%20de%20Caract%C3%A9ristiques%20et%20Fusion%20Multimodale%20par%20Apprentissage%20Non%20Supervis%C3%A9.pdf" target="_blank" rel="noopener" data-forme-sous="rapport">
-            <span class="s-titre">Lire le rapport</span>
-            <span class="s-ctx">Extraction de caractéristiques et fusion multimodale par apprentissage non supervisé, projet IM06.</span></a></li>
+          <li data-forme-sous="irm" style="--c: #9fd2ff"><a href="/irm/">
+            <span class="s-titre">Contraste en IRM</span>
+            <span class="s-ctx">Le contraste et les séquences d'impulsion en livre interactif.</span></a></li>
+          <li class="avec-plus" data-forme-sous="abstractviz" style="--c: #f08a9b"><a href="https://abstractviz.eliott-dionnet.workers.dev/">
+            <span class="s-titre">AbstractViz</span>
+            <span class="s-ctx">1&nbsp;700 peintures abstraites classées sans étiquette.</span></a>
+            <a class="s-plus" href="https://github.com/eliottdionnet/Principaux-Rapports-D-Etudes/blob/main/Extraction%20de%20Caract%C3%A9ristiques%20et%20Fusion%20Multimodale%20par%20Apprentissage%20Non%20Supervis%C3%A9.pdf" target="_blank" rel="noopener" data-forme-sous="rapport">Lire le rapport</a></li>
+          <li data-forme-sous="classification" style="--c: #b9a7ff"><a href="https://github.com/eliottdionnet/Principaux-Rapports-D-Etudes/blob/main/Classification%20Automatique%20par%20Apprentissage%20Profond%20sur%20Donn%C3%A9es%20D%C3%A9s%C3%A9quilibr%C3%A9es.pdf" target="_blank" rel="noopener">
+            <span class="s-titre">Classification</span>
+            <span class="s-ctx">Rapport IMA205. Apprentissage profond sur données déséquilibrées.</span></a></li>
+          <li data-forme-sous="slic" style="--c: #ff9e7a"><a href="/accueil/rapport-slic.pdf" target="_blank" rel="noopener">
+            <span class="s-titre">Superpixels</span>
+            <span class="s-ctx">Rapport. SLIC, de l'image couleur au cube hyperspectral.</span></a></li>
         </ul>
       </details>
     </li>
     <li>
-      <a class="entree" href="https://github.com/eliottdionnet/Principaux-Rapports-D-Etudes/blob/main/Classification%20Automatique%20par%20Apprentissage%20Profond%20sur%20Donn%C3%A9es%20D%C3%A9s%C3%A9quilibr%C3%A9es.pdf" target="_blank" rel="noopener" data-forme="classification" style="--c: #b9a7ff">
-        <span class="titre">Classification</span>
-        <span class="desc">Rapport IMA205. Apprentissage profond sur des données très déséquilibrées.</span>
-      </a>
+      <details class="depliant" name="theme" data-forme="quantique" style="--c: #e7a3ff">
+        <summary class="entree">
+          <span class="titre">Quantique et calcul</span>
+          <span class="desc">Un test de quanticité sur processeur IBM, des schémas numériques.</span>
+        </summary>
+        <ul class="sous-liens">
+          <li data-forme-sous="quantique" style="--c: #e7a3ff"><a href="/accueil/rapport-quantique.pdf" target="_blank" rel="noopener">
+            <span class="s-titre">Preuve quantique</span>
+            <span class="s-ctx">Rapport Artishow. Un test de quanticité exécuté sur un processeur IBM.</span></a></li>
+          <li data-forme-sous="schemas" style="--c: #8fe0c0"><a href="https://github.com/eliottdionnet/Principaux-Rapports-D-Etudes/blob/main/Analyse%20de%20Stabilit%C3%A9%20et%20Convergence%20de%20Sch%C3%A9mas%20Num%C3%A9riques%20(Syst%C3%A8mes%20Diff%C3%A9rentiels).pdf" target="_blank" rel="noopener">
+            <span class="s-titre">Schémas numériques</span>
+            <span class="s-ctx">Rapport MACS. Stabilité et convergence d'un schéma d'Euler explicite.</span></a></li>
+        </ul>
+      </details>
     </li>
     <li>
-      <a class="entree" href="/accueil/rapport-slic.pdf" target="_blank" rel="noopener" data-forme="slic" style="--c: #ff9e7a">
-        <span class="titre">Superpixels</span>
-        <span class="desc">Rapport. SLIC, de l'image couleur au cube hyperspectral.</span>
-      </a>
-    </li>
-    <li>
-      <a class="entree" href="/accueil/rapport-quantique.pdf" target="_blank" rel="noopener" data-forme="quantique" style="--c: #e7a3ff">
-        <span class="titre">Preuve quantique</span>
-        <span class="desc">Rapport Artishow. Un test de quanticité exécuté sur un processeur IBM.</span>
-      </a>
-    </li>
-    <li>
-      <a class="entree" href="/accueil/rapport-robot.pdf" target="_blank" rel="noopener" data-forme="robot" style="--c: #c6e36b">
-        <span class="titre">Robot autonome</span>
-        <span class="desc">Rapport Artefact. Un robot qui capture des balises ArUco, seul puis en équipe.</span>
-      </a>
-    </li>
-    <li>
-      <a class="entree" href="https://github.com/eliottdionnet/Principaux-Rapports-D-Etudes/blob/main/Analyse%20de%20Stabilit%C3%A9%20et%20Convergence%20de%20Sch%C3%A9mas%20Num%C3%A9riques%20(Syst%C3%A8mes%20Diff%C3%A9rentiels).pdf" target="_blank" rel="noopener" data-forme="schemas" style="--c: #8fe0c0">
-        <span class="titre">Schémas numériques</span>
-        <span class="desc">Rapport MACS. Stabilité et convergence d'un schéma d'Euler explicite.</span>
-      </a>
+      <details class="depliant" name="theme" data-forme="robot" style="--c: #c6e36b">
+        <summary class="entree">
+          <span class="titre">Robotique</span>
+          <span class="desc">Un robot autonome qui capture des balises ArUco.</span>
+        </summary>
+        <ul class="sous-liens">
+          <li data-forme-sous="robot" style="--c: #c6e36b"><a href="/accueil/rapport-robot.pdf" target="_blank" rel="noopener">
+            <span class="s-titre">Robot autonome</span>
+            <span class="s-ctx">Rapport Artefact. Capturer des balises ArUco, seul puis en équipe.</span></a></li>
+        </ul>
+      </details>
     </li>
     <li>
       <a class="entree" href="/portfolio/" data-forme="portfolio" style="--c: #f2c25a">
@@ -99,6 +99,6 @@
 
 <p class="legende" id="legende">Au repos, chaque point suit un processus d'Ornstein-Uhlenbeck.</p>
 
-<script src="/accueil/particules.js?v=10" defer></script>
+<script src="/accueil/particules.js?v=11" defer></script>
 </body>
 </html>

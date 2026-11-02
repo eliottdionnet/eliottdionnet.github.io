@@ -10,7 +10,14 @@
 
 (() => {
   const cv = document.getElementById("champ");
+  // entrées du menu (thèmes et portfolio) et projets dépliés sous un thème, chacun avec sa forme
   const entrees = [...document.querySelectorAll("[data-forme]")];
+  const projets = [...document.querySelectorAll("li[data-forme-sous]")];
+  const themeDe = {};
+  entrees.forEach((e) => {
+    themeDe[e.dataset.forme] = e;
+    e.querySelectorAll("[data-forme-sous]").forEach((s) => { themeDe[s.dataset.formeSous] = e; });
+  });
   const menu = document.querySelector(".menu");
   const legende = document.getElementById("legende");
   if (!cv) return;
@@ -364,8 +371,11 @@
   }
 
   let forme = "repos", precedente = "repos";
-  function choisir(f, haut = f) {
-    entrees.forEach((a) => a.classList.toggle("actif", a.dataset.forme === haut));
+  // f : la forme à dessiner ; on allume son thème et, s'il est déplié, le projet correspondant
+  function choisir(f) {
+    const theme = themeDe[f];
+    entrees.forEach((a) => a.classList.toggle("actif", a === theme));
+    projets.forEach((p) => p.classList.toggle("actif", p.dataset.formeSous === f));
     if (f === forme) return;
     precedente = forme; forme = f;
     const now = performance.now();
@@ -498,17 +508,22 @@
     minuterie = setTimeout(suivant, CYCLE[ic][1]);
   }
   const relancer = (delai) => { clearTimeout(minuterie); if (!reduce) minuterie = setTimeout(suivant, delai); };
-  // l'élément survolé (ou ayant le focus) décide de la forme ; un sous-lien a sa propre forme
+  // l'élément survolé (ou ayant le focus) décide de la forme : un thème montre sa forme principale,
+  // un projet déplié la sienne
   function survoler(el) {
     const entree = el && el.closest ? el.closest("[data-forme]") : null;
     if (!entree) { if (survol) { survol = false; relancer(2600); } return; }
     const sous = el.closest("[data-forme-sous]");
-    const haut = entree.dataset.forme, f = sous ? sous.dataset.formeSous : haut;
+    const f = sous ? sous.dataset.formeSous : entree.dataset.forme;
     survol = true; clearTimeout(minuterie);
-    const k = CYCLE.findIndex((c) => c[0] === haut);
+    const k = CYCLE.findIndex((c) => c[0] === f);
     if (k >= 0) ic = k;
-    choisir(f, haut);
+    choisir(f);
   }
+  // un seul thème ouvert à la fois (l'attribut name des details le fait déjà dans les navigateurs récents)
+  document.querySelectorAll("details.depliant").forEach((d) => d.addEventListener("toggle", () => {
+    if (d.open) document.querySelectorAll("details.depliant[open]").forEach((o) => { if (o !== d) o.open = false; });
+  }));
   if (menu) {
     menu.addEventListener("pointerover", (e) => survoler(e.target));
     menu.addEventListener("pointerleave", () => survoler(null));
