@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Théorie BPP : mouvements moléculaires et relaxation</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #pj { height: 250px; }
+  #pt { height: 250px; }
+</style>
+</head>
+<body>
+<div class="controls" id="ctl"></div>
+<div class="grid2">
+  <div class="card">
+    <h4>Spectre des mouvements moléculaires ω·J(ω)</h4>
+    <div class="plot" id="pj"></div>
+    <div class="note">La « bosse » contient toujours la même énergie ; elle glisse avec τ<sub>c</sub>. Seule la part située à ω₀ (et 2ω₀) peut échanger de l'énergie avec les spins → relaxation T₁.</div>
+  </div>
+  <div class="card">
+    <h4>T₁ et T₂ en fonction du temps de corrélation τ<sub>c</sub></h4>
+    <div class="plot" id="pt"></div>
+    <div class="legend" id="leg"></div>
+  </div>
+</div>
+<div class="readout" id="ro" style="margin-top:8px"></div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script>
+(function () {
+  const K = 2e10;                       // s^-2 : constante dipolaire (eau libre -> T1 = T2 ≈ 2,9 s)
+  const TAU_FREE = 3.5e-12;             // s
+  const P = { tau: 1.2e-9, B0: 3, pb: 0 };
+  const w0 = () => 2 * Math.PI * MRI.GAMMA_BAR * 1e6 * P.B0;   // rad/s
+  const J = (w, tau) => tau / (1 + w * w * tau * tau);
+  const R1 = (tau) => K * (J(w0(), tau) + 4 * J(2 * w0(), tau));
+  const R2 = (tau) => (K / 2) * (3 * tau + 5 * J(w0(), tau) + 2 * J(2 * w0(), tau));
+  const mix = (R, tau) => (1 - P.pb) * R(TAU_FREE) + P.pb * R(tau);
+
+  const tauS = UI.slider("#ctl", { label: "Temps de corrélation τ<sub>c</sub>", min: 1e-12, max: 1e-5, log: true, value: P.tau, unit: "s",
+    fmt: (v) => { const e = Math.floor(Math.log10(v)); return UI.fmt(v / Math.pow(10, e), 1) + "·10" + sup(e); },
+    onInput: (v) => { P.tau = v; redraw(); } });
+  UI.seg("#ctl", { label: "Champ B₀", value: 3, options: [[1.5, "1,5 T"], [3, "3 T"], [7, "7 T"]], onChange: (v) => { P.B0 = v; redraw(); } });
+  const pbS = UI.slider("#ctl", { label: "Fraction d'eau liée (tissu)", min: 0, max: 0.2, step: 0.005, value: 0, fmt: (v) => UI.fmt(100 * v, 1) + " %", onInput: (v) => { P.pb = v; redraw(); } });
+  function sup(e) { const m = { "-": "⁻", 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹" }; return String(e).split("").map((c) => m[c]).join(""); }
+
+  // ---------------------------------------------------------------- spectre
+  const cj = UI.canvas("#pj", (ctx, w, h) => {
+    pj.frame(ctx, w, h);
+    pj.func((om) => om * J(om, P.tau), { color: UI.css("--c-violet"), width: 2.2, n: 400 });
+    pj.vline(w0(), { color: UI.css("--c-rouge"), width: 1.5, label: "ω₀", labelDy: 0 });
+    pj.vline(2 * w0(), { color: UI.css("--c-rouge"), width: 1, dash: [4, 4], label: "2ω₀", labelDy: 14 });
+    pj.dot(w0(), w0() * J(w0(), P.tau), { color: UI.css("--c-rouge"), label: "ω₀J(ω₀) = " + UI.fmt(w0() * J(w0(), P.tau), 2), bold: true, dy: 16 });
+    pj.vline(1 / P.tau, { color: UI.css("--muted"), width: 1, dash: [2, 3] });
+    pj.label(1 / P.tau, 0.04, "1/τc", { align: "center", color: UI.css("--muted"), dy: -2 });
+  });
+  const pj = new UI.Plot(cj, { x: { min: 1e5, max: 1e13, log: true, label: "fréquence ω (rad/s)" }, y: { min: 0, max: 0.6, ticks: [0, 0.25, 0.5] }, pad: { l: 42, r: 14, t: 10, b: 36 } });
+
+  // --------------------------------------------------------------- T1, T2
+  const bands = [
+    { a: 1e-12, b: 2e-11, lab: "liquides", c: "--t-lcr" },
+    { a: 3e-10, b: 4e-9, lab: "graisse", c: "--t-gr" },
+    { a: 1e-8, b: 5e-7, lab: "eau liée", c: "--t-sg" },
+    { a: 2e-6, b: 1e-5, lab: "solides", c: "--muted" },
+  ];
+  const ct = UI.canvas("#pt", drawT);
+  const pt = new UI.Plot(ct, { x: { min: 1e-12, max: 1e-5, log: true, label: "τc (s)" }, y: { min: 1e-6, max: 1e3, log: true, fmt: UI.pow10, label: "T (s)" }, pad: { l: 52, r: 14, t: 18, b: 36 } });
+  pt.hoverable(ct, () => [
+    { name: "T₁", color: UI.css("--t-sb"), f: (x) => 1 / R1(x) },
+    { name: "T₂", color: UI.css("--t-lcr"), f: (x) => 1 / R2(x) },
+  ], { xName: "τc (s)", x: (v) => v.toExponential(1).replace(".", ","), y: fmtT });
+  function fmtT(s) { return s >= 1 ? UI.fmt(s, 2) + " s" : s >= 1e-3 ? UI.fmt(s * 1e3, 1) + " ms" : UI.fmt(s * 1e6, 1) + " µs"; }
+  function drawT(ctx, w, h) {
+    pt.frame(ctx, w, h);
+    bands.forEach((bd) => {
+      const x0 = pt.X(bd.a), x1 = pt.X(bd.b);
+      ctx.fillStyle = UI.css(bd.c); ctx.globalAlpha = 0.12; ctx.fillRect(x0, pt.T, x1 - x0, pt.B - pt.T); ctx.globalAlpha = 1;
+      UI.text(ctx, bd.lab, (x0 + x1) / 2, pt.T - 8, { align: "center", size: 11, color: UI.css("--ink2") });
+    });
+    pt.func((x) => 1 / R1(x), { color: UI.css("--t-sb"), width: 2.2, n: 400 });
+    pt.func((x) => 1 / R2(x), { color: UI.css("--t-lcr"), width: 2.2, n: 400 });
+    const tmin = 0.616 / w0();
+    pt.vline(tmin, { color: UI.css("--muted"), dash: [2, 3], width: 1, label: "ω₀τc ≈ 0,62", labelDy: 8 });
+    pt.vline(P.tau, { color: UI.css("--ink"), width: 1.2 });
+    pt.dot(P.tau, 1 / R1(P.tau), { color: UI.css("--t-sb"), label: "T₁", bold: true });
+    pt.dot(P.tau, 1 / R2(P.tau), { color: UI.css("--t-lcr"), label: "T₂", bold: true, dy: 12 });
+    if (P.pb > 0) {
+      pt.dot(P.tau, 1 / mix(R1, P.tau), { color: UI.css("--t-sb"), r: 6, label: "T₁ tissu", dx: -9, align: "right", dy: -6 });
+      pt.dot(P.tau, 1 / mix(R2, P.tau), { color: UI.css("--t-lcr"), r: 6, label: "T₂ tissu", dx: -9, align: "right", dy: -6 });
+    }
+    pt.drawHover();
+  }
+  function legend() {
+    UI.$("#leg").innerHTML = `<span><span class="sw" style="background:${UI.css("--t-sb")}"></span>T₁</span><span><span class="sw" style="background:${UI.css("--t-lcr")}"></span>T₂</span>` +
+      `<span class="note">bandes = régimes de mouvement typiques</span>`;
+  }
+  UI.onTheme(legend);
+
+  function redraw() {
+    cj.redraw(); ct.redraw(); legend();
+    let s = `ω₀τc = ${UI.fmt(w0() * P.tau, 3)} · population seule : T₁ = ${fmtT(1 / R1(P.tau))}, T₂ = ${fmtT(1 / R2(P.tau))}`;
+    if (P.pb > 0) s += ` · tissu (${UI.fmt(100 * (1 - P.pb), 1)} % eau libre + ${UI.fmt(100 * P.pb, 1)} % liée, échange rapide) : T₁ = ${fmtT(1 / mix(R1, P.tau))}, T₂ = ${fmtT(1 / mix(R2, P.tau))}`;
+    UI.$("#ro").innerHTML = s;
+  }
+  redraw();
+  window.__set = (tau, pb) => { tauS.set(tau, true); pbS.set(pb, true); P.tau = tau; P.pb = pb; redraw(); };
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pondération T2 : le rôle de TE</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #ps { height: 205px; }
+  #pc { height: 150px; }
+  #im { height: 330px; }
+</style>
+</head>
+<body>
+<div class="controls" id="ctl"></div>
+<div class="grid2">
+  <div class="card">
+    <h4 id="t1">Signal des tissus en fonction de TE</h4>
+    <div class="plot" id="ps"></div>
+    <h4 style="margin-top:6px" id="t2">Contraste entre deux tissus</h4>
+    <div class="plot" id="pc"></div>
+  </div>
+  <div class="card">
+    <h4>Image simulée (TR long = 6000 ms)</h4>
+    <div class="plot" id="im"></div>
+    <div class="readout" id="ro"></div>
+  </div>
+</div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script src="data/cerveau.js"></script>
+<script>
+(function () {
+  const TR = 6000;
+  const P = { TE: 90, pair: "sg-sb" };
+  const SHOW = ["sb", "sg", "lcr", "les"];
+  const PAIRS = { "sg-sb": ["sg", "sb"], "lcr-sg": ["lcr", "sg"], "les-sb": ["les", "sb"] };
+  const TMAX = 300;
+  // Signal en écho de spin avec TR long mais fini : DP (1 - e^{-TR/T1}) e^{-TE/T2}
+  const S = (id, te) => { const t = MRI.T[id]; return t.DP * (1 - Math.exp(-TR / t.T1)) * Math.exp(-te / t.T2); };
+  const eff = (id) => { const t = MRI.T[id]; return Object.assign({}, t, { DP: t.DP * (1 - Math.exp(-TR / t.T1)) }); };
+
+  UI.slider("#ctl", { label: "TE", min: 1, max: TMAX, step: 1, value: P.TE, unit: "ms", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.TE = v; redraw(); } });
+  UI.seg("#ctl", { label: "Contraste étudié", value: P.pair, options: [["sg-sb", "SG − SB"], ["lcr-sg", "LCR − SG"], ["les-sb", "Lésion − SB"]], onChange: (v) => { P.pair = v; redraw(); } });
+
+  // --------------------------------------------------------------- S(TE)
+  const series = () => SHOW.map((id) => ({ name: MRI.T[id].court, color: UI.tcolor(id), f: (te) => S(id, te) }));
+  const cs = UI.canvas("#ps", (ctx, w, h) => {
+    ps.x = { min: 0, max: TMAX, label: "TE (ms)" };
+    ps.frame(ctx, w, h);
+    const ser = series();
+    ser.forEach((s) => ps.func(s.f, { color: s.color, width: 2.2 }));
+    ps.endLabels(ser, TMAX);
+    ps.vline(P.TE, { color: UI.css("--ink"), width: 1.2 });
+    ser.forEach((s) => ps.dot(P.TE, s.f(P.TE), { color: s.color }));
+    const [a, b] = PAIRS[P.pair];
+    // flèche verticale = contraste entre la paire choisie
+    const x = ps.X(P.TE) + 10, ya = ps.Y(S(a, P.TE)), yb = ps.Y(S(b, P.TE));
+    if (Math.abs(ya - yb) > 6) { UI.arrow(ctx, x, yb, x, ya, UI.css("--ink2"), 1.4, 6); UI.arrow(ctx, x, ya, x, yb, UI.css("--ink2"), 1.4, 6); }
+    ps.drawHover();
+  });
+  const ps = new UI.Plot(cs, { x: { min: 0, max: 300 }, y: { min: 0, max: 1, label: "S / M₀", ticks: [0, 0.25, 0.5, 0.75, 1] }, pad: { l: 46, r: 40, t: 8, b: 34 } });
+  ps.hoverable(cs, series, { xName: "TE (ms)", y: (v) => UI.fmt(v, 3) });
+
+  // ------------------------------------------------------------ contraste
+  const C = (te) => { const [a, b] = PAIRS[P.pair]; return S(a, te) - S(b, te); };
+  const teOpt = () => { const [a, b] = PAIRS[P.pair]; return MRI.optTE(eff(a), eff(b), "T2"); };
+  const cc = UI.canvas("#pc", (ctx, w, h) => {
+    let m = 0; for (let te = 0; te <= TMAX; te += TMAX / 200) m = Math.max(m, Math.abs(C(te)));
+    pc.x = { min: 0, max: TMAX, label: "TE (ms)" };
+    pc.y = { min: Math.min(0, -m * 0.1), max: m * 1.25 || 1, label: "ΔS" };
+    pc.frame(ctx, w, h);
+    pc.func(C, { color: UI.css("--c-violet"), width: 2.2 });
+    pc.vline(P.TE, { color: UI.css("--ink"), width: 1.2 });
+    const to = teOpt();
+    if (isFinite(to) && to > 0 && to < TMAX) {
+      pc.vline(to, { color: UI.css("--c-violet"), dash: [4, 4], width: 1 });
+      pc.dot(to, C(to), { color: UI.css("--c-violet"), label: "TE* = " + UI.fmt(to, 0) + " ms", bold: true });
+    }
+    pc.dot(P.TE, C(P.TE), { color: UI.css("--ink"), r: 4 });
+    pc.drawHover();
+  });
+  const pc = new UI.Plot(cc, { x: { min: 0, max: 300 }, y: { min: 0, max: 1 }, pad: { l: 46, r: 40, t: 8, b: 34 } });
+  pc.hoverable(cc, () => [{ name: "ΔS", color: UI.css("--c-violet"), f: C }], { xName: "TE (ms)", y: (v) => UI.fmt(v, 3) });
+
+  // ---------------------------------------------------------------- image
+  const ci = UI.canvas("#im", (ctx, w, h) => {
+    const img = MRI.simuler({ seq: "SE", TR, TE: P.TE });
+    MRI.dessiner(ctx, img.mag, { x: 0, y: 0, w, h }, { lo: 0, hi: MRI.fenetre(img.mag), label: "Écho de spin, TE = " + UI.fmt(P.TE, 0) + " ms", sub: "fenêtrage automatique" });
+  });
+
+  function redraw() {
+    cs.redraw(); cc.redraw(); ci.redraw();
+    const [a, b] = PAIRS[P.pair], to = teOpt();
+    UI.$("#t2").textContent = `Contraste ΔS = S(${MRI.T[a].court}) − S(${MRI.T[b].court})`;
+    UI.$("#ro").innerHTML = `TE optimal pour ${MRI.T[a].court}/${MRI.T[b].court} : ${isFinite(to) && to > 0 ? UI.fmt(to, 0) + " ms" : "—"}` +
+      " · le LCR (T₂ ≈ 2 s) reste brillant quand tout le reste s'éteint.";
+  }
+  redraw();
+})();
+</script>
+</body>
+</html>

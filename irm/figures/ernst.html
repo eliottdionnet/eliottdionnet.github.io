@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Angle d'Ernst et contraste T1 en écho de gradient</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #pa { height: 250px; }
+  #pc { height: 150px; }
+  #map { height: 400px; }
+</style>
+</head>
+<body>
+<div class="controls" id="ctl"></div>
+<div id="tabA">
+  <div class="card">
+    <h4>Signal en régime permanent S(α) = DP · sin α (1 − E₁)/(1 − cos α E₁)</h4>
+    <div class="plot" id="pa"></div>
+    <h4 style="margin-top:4px">Contraste T₁ : S(SB) − S(SG)</h4>
+    <div class="plot" id="pc"></div>
+  </div>
+</div>
+<div id="tabB" style="display:none">
+  <div class="card">
+    <h4>Carte du contraste S(SB) − S(SG) selon TR et α — cliquez pour choisir un point</h4>
+    <div class="plot" id="map"></div>
+    <div class="legend" id="legB"></div>
+  </div>
+</div>
+<div class="readout" id="ro" style="margin-top:6px"></div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script>
+(function () {
+  const P = { TR: 30, alpha: 25, tab: "A" };
+  const IDS = ["sb", "sg", "lcr", "gr"];
+  const S = (id, TR, a) => MRI.spgr(MRI.T[id], TR, 0, a);   // TE → 0 : on isole l'effet T1
+  const C = (TR, a) => S("sb", TR, a) - S("sg", TR, a);
+
+  UI.seg("#ctl", { label: "Vue", value: "A", options: [["A", "Signal vs angle"], ["B", "Carte (TR, α)"]], onChange: (v) => { P.tab = v; UI.$("#tabA").style.display = v === "A" ? "" : "none"; UI.$("#tabB").style.display = v === "B" ? "" : "none"; redraw(); } });
+  const trS = UI.slider("#ctl", { label: "TR", min: 3, max: 5000, log: true, value: P.TR, unit: "ms", fmt: (v) => UI.fmt(v, v < 10 ? 1 : 0), onInput: (v) => { P.TR = v; redraw(); } });
+  const aS = UI.slider("#ctl", { label: "Angle α", min: 1, max: 90, step: 0.5, value: P.alpha, unit: "°", fmt: (v) => UI.fmt(v, 1), onInput: (v) => { P.alpha = v; redraw(); } });
+
+  // ------------------------------------------------------------- S(α)
+  const series = () => IDS.map((id) => ({ name: MRI.T[id].court, color: UI.tcolor(id), f: (a) => S(id, P.TR, a) }));
+  const ca = UI.canvas("#pa", (ctx, w, h) => {
+    let m = 0; IDS.forEach((id) => { m = Math.max(m, S(id, P.TR, MRI.ernst(P.TR, MRI.T[id].T1))); });
+    pa.y = { min: 0, max: m * 1.18, label: "S / M₀" };
+    pa.frame(ctx, w, h);
+    const ser = series();
+    ser.forEach((s) => pa.func(s.f, { color: s.color, width: 2.2 }));
+    pa.vline(P.alpha, { color: UI.css("--ink"), width: 1.2 });
+    IDS.forEach((id) => { const aE = MRI.ernst(P.TR, MRI.T[id].T1); pa.dot(aE, S(id, P.TR, aE), { color: UI.tcolor(id), r: 4, label: "Ernst " + UI.fmt(aE, 0) + "°", dy: id === "sg" ? 12 : id === "lcr" ? 14 : -9, dx: id === "sg" ? 6 : id === "lcr" ? -7 : 7, align: id === "lcr" ? "right" : "left" }); });
+    pa.endLabels(ser, 90);
+    ser.forEach((s) => pa.dot(P.alpha, s.f(P.alpha), { color: s.color, r: 3.5 }));
+    pa.drawHover();
+  });
+  const pa = new UI.Plot(ca, { x: { min: 0, max: 90, label: "angle de bascule α (°)", ticks: [0, 15, 30, 45, 60, 75, 90] }, y: { min: 0, max: 1 }, pad: { l: 46, r: 40, t: 12, b: 34 } });
+  pa.hoverable(ca, series, { xName: "α (°)", y: (v) => UI.fmt(v, 3) });
+
+  const cc = UI.canvas("#pc", (ctx, w, h) => {
+    let lo = 0, hi = 0; for (let a = 0.5; a <= 90; a += 0.5) { const v = C(P.TR, a); lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    const m = Math.max(Math.abs(lo), Math.abs(hi), 1e-3);
+    pc.y = { min: Math.min(lo * 1.2, -m * 0.1), max: Math.max(hi * 1.2, m * 0.1), label: "ΔS" };
+    pc.frame(ctx, w, h);
+    pc.func((a) => C(P.TR, a), { color: UI.css("--c-violet"), width: 2.2 });
+    pc.vline(P.alpha, { color: UI.css("--ink"), width: 1.2 });
+    pc.dot(P.alpha, C(P.TR, P.alpha), { color: UI.css("--c-violet") });
+    pc.label(88, pc.y.max * 0.8, "> 0 : SB plus claire (T1w)", { align: "right", color: UI.css("--ink2") });
+    if (pc.y.min < -1e-4) pc.label(88, pc.y.min * 0.6, "< 0 : SG plus claire", { align: "right", color: UI.css("--ink2") });
+    pc.drawHover();
+  });
+  const pc = new UI.Plot(cc, { x: { min: 0, max: 90, label: "α (°)", ticks: [0, 15, 30, 45, 60, 75, 90] }, y: { min: -1, max: 1 }, pad: { l: 46, r: 40, t: 8, b: 34 } });
+  pc.hoverable(cc, () => [{ name: "ΔS", color: UI.css("--c-violet"), f: (a) => C(P.TR, a) }], { xName: "α (°)", y: (v) => UI.fmt(v, 4) });
+
+  // ---------------------------------------------------------------- carte
+  const NX = 160, NY = 90, TRmin = 3, TRmax = 5000;
+  const cm = UI.canvas("#map", (ctx, w, h) => {
+    pm.frame(ctx, w, h);
+    const data = new Float32Array(NX * NY); let m = 0;
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+      const TR = TRmin * Math.pow(TRmax / TRmin, (i + 0.5) / NX), a = 90 * (1 - (j + 0.5) / NY);
+      const v = C(TR, a); data[j * NX + i] = v; m = Math.max(m, Math.abs(v));
+    }
+    UI.image(ctx, data, NX, NY, { x: pm.L, y: pm.T, w: pm.R - pm.L, h: pm.B - pm.T }, { lo: -m, hi: m, cmap: "div", stretch: true });
+    ctx.imageSmoothingEnabled = true;
+    // Ernst(TR) pour SB et SG
+    ["sb", "sg"].forEach((id) => pm.func((TR) => MRI.ernst(TR, MRI.T[id].T1), { color: UI.tcolor(id), width: 2, dash: [5, 3] }));
+    // isoligne ΔS = 0 (recherche de racine en α pour chaque TR)
+    const xs = [], ys = [];
+    for (let i = 0; i <= 200; i++) {
+      const TR = TRmin * Math.pow(TRmax / TRmin, i / 200);
+      let prev = C(TR, 0.5), root = null;
+      for (let a = 1; a <= 90; a += 0.5) { const v = C(TR, a); if ((v > 0) !== (prev > 0)) { root = a; break; } prev = v; }
+      xs.push(TR); ys.push(root);
+    }
+    pm.line(xs, ys, { color: UI.css("--ink"), width: 1.5, dash: [2, 3] });
+    const k = 150; if (ys[k]) pm.label(xs[k], ys[k], "ΔS = 0", { color: UI.css("--ink"), dx: 8, dy: 6 });
+    pm.label(6, 72, "SB plus claire : pondération T1", { color: UI.css("--ink"), weight: "600" });
+    pm.label(1800, 20, "SG plus claire : DP", { color: UI.css("--ink"), weight: "600", align: "center" });
+    pm.dot(P.TR, P.alpha, { color: UI.css("--ink"), r: 6, label: `TR ${UI.fmt(P.TR, 0)} ms, α ${UI.fmt(P.alpha, 0)}°`, bold: true });
+    pm.drawHover();
+  });
+  const pm = new UI.Plot(cm, { x: { min: TRmin, max: TRmax, log: true, label: "TR (ms)", ticks: [3, 10, 30, 100, 300, 1000, 3000] , fmt: (v) => UI.fmt(v, 0)}, y: { min: 0, max: 90, label: "α (°)", ticks: [0, 15, 30, 45, 60, 75, 90] }, pad: { l: 46, r: 14, t: 8, b: 36 } });
+  cm.cv.addEventListener("click", (ev) => {
+    const r = cm.cv.getBoundingClientRect(), px = ev.clientX - r.left, py = ev.clientY - r.top;
+    if (px < pm.L || px > pm.R || py < pm.T || py > pm.B) return;
+    P.TR = pm.invX(px); P.alpha = UI.clamp(90 * (pm.B - py) / (pm.B - pm.T), 1, 90);
+    trS.set(P.TR, true); aS.set(P.alpha, true); redraw();
+  });
+  cm.cv.style.cursor = "crosshair";
+  function legB() {
+    UI.$("#legB").innerHTML = `<span><span class="sw" style="background:${UI.css("--pos")}"></span>SB plus claire que SG</span><span><span class="sw" style="background:${UI.css("--neg")}"></span>SG plus claire</span>` +
+      `<span><span class="sw" style="background:${UI.tcolor("sb")}"></span>- - α d'Ernst SB</span><span><span class="sw" style="background:${UI.tcolor("sg")}"></span>- - α d'Ernst SG</span>`;
+  }
+  UI.onTheme(legB);
+
+  function redraw() {
+    if (P.tab === "A") { ca.redraw(); cc.redraw(); } else cm.redraw();
+    legB();
+    UI.$("#ro").innerHTML = `TR = ${UI.fmt(P.TR, 0)} ms, α = ${UI.fmt(P.alpha, 1)}° → S(SB) = ${UI.fmt(S("sb", P.TR, P.alpha), 3)}, S(SG) = ${UI.fmt(S("sg", P.TR, P.alpha), 3)}, ΔS = ${UI.fmt(C(P.TR, P.alpha), 4)} · Ernst : SB ${UI.fmt(MRI.ernst(P.TR, MRI.T.sb.T1), 1)}°, SG ${UI.fmt(MRI.ernst(P.TR, MRI.T.sg.T1), 1)}°`;
+  }
+  redraw();
+})();
+</script>
+</body>
+</html>

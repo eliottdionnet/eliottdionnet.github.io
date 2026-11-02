@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chronogrammes écho de gradient / écho de spin</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #dg { height: 350px; }
+  #desc { min-height: 44px; font-size: 13px; color: var(--ink2); padding: 6px 4px 0; }
+  #desc b { color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="controls" id="ctl"></div>
+<div class="card">
+  <div class="plot" id="dg"></div>
+  <div id="desc"></div>
+</div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script>
+(function () {
+  const P = { seq: "GRE", TE: { GRE: 6, SE: 30 }, TR: { GRE: 20, SE: 600 }, alpha: 25 };
+  const LANES = [["rf", "RF"], ["gz", "G<sub>coupe</sub>"], ["gy", "G<sub>phase</sub>"], ["gx", "G<sub>lecture</sub>"], ["sig", "Signal / ADC"]];
+  let hover = null, elems = [];
+
+  const segS = UI.seg("#ctl", { label: "Séquence", value: P.seq, options: [["GRE", "Écho de gradient"], ["SE", "Écho de spin"]], onChange: (v) => { P.seq = v; sync(); } });
+  const teS = UI.slider("#ctl", { label: "TE", min: 3.5, max: 30, step: 0.5, value: P.TE.GRE, unit: "ms", fmt: (v) => UI.fmt(v, 1), onInput: (v) => { P.TE[P.seq] = v; draw(); } });
+  const trS = UI.slider("#ctl", { label: "TR", min: 10, max: 1000, log: true, value: P.TR.GRE, unit: "ms", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.TR[P.seq] = v; draw(); } });
+  const aS = UI.slider("#ctl", { label: "Angle de bascule α", min: 5, max: 90, step: 1, value: P.alpha, unit: "°", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.alpha = v; draw(); } });
+  function sync() {
+    const g = P.seq === "GRE";
+    teS.input.min = g ? 3.5 : 12; teS.input.max = g ? 30 : 120; teS.set(P.TE[P.seq], true);
+    trS.set(P.TR[P.seq], true);
+    aS.el.style.display = g ? "" : "none";
+    draw();
+  }
+
+  // ------------------------------------------------------- éléments (ms)
+  function build() {
+    const TE = P.TE[P.seq], TR = P.TR[P.seq], E = [];
+    const add = (lane, a, b, kind, amp, desc, extra = {}) => E.push(Object.assign({ lane, a, b, kind, amp, desc }, extra));
+    if (P.seq === "GRE") {
+      add("rf", -1, 1, "sinc", P.alpha / 90, `Impulsion d'excitation α = ${P.alpha}° (&lt; 90° en écho de gradient) : bascule une partie seulement de M<sub>z</sub> dans le plan transverse — on peut répéter vite (TR court) sans saturer.`, { lab: "α" });
+      add("gz", -1.1, 1.1, "trap", 1, "Sélection de coupe : pendant l'impulsion, le gradient rend la fréquence de résonance dépendante de z → seule une tranche est excitée.");
+      add("gz", 1.2, 2.2, "trap", -1.1, "Refocalisation de coupe (aire = −½ du plateau) : annule le déphasage accumulé à travers l'épaisseur de la coupe.");
+      add("gy", 1.2, 2.2, "table", 1, "Codage de phase : une amplitude différente à chaque TR — une ligne de l'espace k par répétition.");
+      add("gx", 1.2, 2.2, "trap", -1.25, "Pré-déphasage de lecture (lobe négatif) : son aire est exactement compensée à mi-lecture → les spins se remettent en phase : c'est l'écho de gradient. Il ne compense <i>pas</i> les inhomogénéités de B₀ (T₂′).");
+      add("gx", TE - 1.2, TE + 1.2, "trap", 1, "Gradient de lecture (codage en fréquence) pendant l'acquisition.");
+      add("gz", TE + 1.3, TE + 2.8, "trap", 1.4, "Gradient de spoiling : détruit l'aimantation transverse résiduelle avant l'impulsion suivante (hypothèse M<sub>xy</sub> = 0 du chapitre 6).");
+      add("sig", TE - 1.2, TE + 1.2, "adc", 1, "Fenêtre d'acquisition (ADC) : le centre de l'écho (centre de l'espace k) tombe à TE.");
+      add("sig", 0.2, 2.2, "fid", 1, "FID : décroît en T₂* et est aussitôt déphasée par le lobe négatif de lecture.");
+      add("sig", TE - 1.6, TE + 1.6, "echo", Math.exp(-TE / 50), `Écho de gradient à TE : amplitude ∝ e<sup>−TE/T₂*</sup> (≈ ${UI.fmt(Math.exp(-TE / 50), 2)} pour T₂* = 50 ms). Contraste T₂*.`);
+      add("rf", TR - 1, TR + 1, "sinc", P.alpha / 90, "Impulsion suivante : TR plus tard.", { lab: "α", next: true });
+    } else {
+      const h = TE / 2;
+      add("rf", -1, 1, "sinc", 1, "Impulsion d'excitation 90° : toute l'aimantation longitudinale passe dans le plan transverse.", { lab: "90°" });
+      add("gz", -1.1, 1.1, "trap", 1, "Sélection de coupe de l'impulsion 90°.");
+      add("gz", 1.2, 2.2, "trap", -1.1, "Refocalisation de coupe (aire = −½ du plateau).");
+      add("gy", 2.4, 3.4, "table", 1, "Codage de phase : une amplitude différente à chaque TR.");
+      add("gx", 2.4, 3.4, "trap", 1.25, "Pré-déphasage de lecture POSITIF : le 180° va inverser la phase accumulée, ce lobe positif devient donc « négatif » et se compense à mi-lecture.");
+      add("rf", h - 1, h + 1, "sinc", 2, `Impulsion de refocalisation 180° à TE/2 = ${UI.fmt(h, 1)} ms : inverse les phases, de sorte que les déphasages dus aux inhomogénéités statiques se compensent exactement à TE.`, { lab: "180°" });
+      add("gz", h - 1.1, h + 1.1, "trap", 1, "Sélection de coupe du 180°.");
+      add("gz", h - 2.3, h - 1.2, "trap", 1.6, "Crushers (de part et d'autre du 180°) : éliminent le signal parasite d'un 180° imparfait sans toucher à l'écho.");
+      add("gz", h + 1.2, h + 2.3, "trap", 1.6, "Crushers (de part et d'autre du 180°) : éliminent le signal parasite d'un 180° imparfait sans toucher à l'écho.");
+      add("gx", TE - 1.2, TE + 1.2, "trap", 1, "Gradient de lecture pendant l'acquisition.");
+      add("sig", TE - 1.2, TE + 1.2, "adc", 1, "Fenêtre d'acquisition (ADC) centrée sur l'écho de spin (TE).");
+      add("sig", 0.2, 2.6, "fid", 1, "FID après le 90° : décroît en T₂*.");
+      add("sig", TE - 2.2, TE + 2.2, "echo", Math.exp(-TE / 80), `Écho de spin à TE : amplitude ∝ e<sup>−TE/T₂</sup> (≈ ${UI.fmt(Math.exp(-TE / 80), 2)} pour T₂ = 80 ms). Les inhomogénéités statiques (T₂′) sont compensées.`);
+      add("rf", TR - 1, TR + 1, "sinc", 1, "Impulsion 90° suivante : TR plus tard.", { lab: "90°", next: true });
+    }
+    return { E, TE, TR };
+  }
+
+  // --------------- axe du temps « schématique » : temps morts compressés
+  function makeWarp(E, TR) {
+    const iv = E.filter((e) => !e.next).map((e) => [e.a - 0.3, e.b + 0.3]).sort((p, q) => p[0] - q[0]);
+    const busy = [];
+    iv.forEach(([a, b]) => { if (busy.length && a <= busy[busy.length - 1][1]) busy[busy.length - 1][1] = Math.max(busy[busy.length - 1][1], b); else busy.push([a, b]); });
+    const g = (d) => (d < 2 ? d : 2 + 1.6 * Math.log(1 + (d - 2) / 2));   // compression des temps morts
+    const knots = [[busy[0][0], 0]];
+    let u = 0;
+    busy.forEach(([a, b], i) => {
+      if (i > 0) { u += g(a - busy[i - 1][1]); knots.push([a, u]); }
+      u += b - a; knots.push([b, u]);
+    });
+    const endBusy = busy[busy.length - 1][1], gap = TR - 1.3 - endBusy;
+    let brk = null;
+    if (gap > 3) { brk = [u + 0.6, u + 2.4]; u += 3.0; } else u += Math.max(gap, 0.1);
+    knots.push([TR - 1.3, u]); u += 2.6; knots.push([TR + 1.3, u]);
+    const W = (t) => {
+      if (t <= knots[0][0]) return 0;
+      for (let i = 1; i < knots.length; i++) {
+        const [t0, u0] = knots[i - 1], [t1, u1] = knots[i];
+        if (t <= t1) return u0 + (u1 - u0) * (t - t0) / Math.max(1e-9, t1 - t0);
+      }
+      return u;
+    };
+    return { W, umax: u, brk, endBusy };
+  }
+
+  const cv = UI.canvas("#dg", render);
+  function render(ctx, w, h) {
+    const { E, TE, TR } = build();
+    elems = E;
+    const warp = makeWarp(E, TR);
+    const L = 92, R = w - 12, top = 16, BR = P.seq === "SE" ? 58 : 42, laneH = (h - top - BR) / LANES.length;
+    const X = (t) => L + (warp.W(t) / warp.umax) * (R - L);
+    const lane = (id) => LANES.findIndex((l) => l[0] === id);
+    const mid = (id) => top + laneH * (lane(id) + 0.5);
+    const ink = UI.css("--ink"), ink2 = UI.css("--ink2"), axis = UI.css("--axis");
+    const colors = { rf: UI.css("--rf"), gz: UI.css("--t-sg"), gy: UI.css("--t-sb"), gx: UI.css("--t-lcr"), sig: ink };
+
+    LANES.forEach(([id, name], i) => {
+      const y = mid(id);
+      ctx.strokeStyle = axis; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(L, Math.round(y) + 0.5); ctx.lineTo(R, Math.round(y) + 0.5); ctx.stroke();
+      UI.text(ctx, name.replace(/<sub>(.*?)<\/sub>/, " $1"), 6, y, { color: ink2, size: 12, weight: "600" });
+    });
+    // coupure de l'axe temporel avant TR
+    if (warp.brk) {
+      const xb0 = L + warp.brk[0] / warp.umax * (R - L), xb1 = L + warp.brk[1] / warp.umax * (R - L);
+      ctx.fillStyle = UI.css("--panel"); ctx.fillRect(xb0, top, xb1 - xb0, h - top - BR);
+      ctx.strokeStyle = UI.css("--muted"); ctx.lineWidth = 1.2;
+      [xb0, xb1].forEach((x) => { ctx.beginPath(); ctx.moveTo(x - 3, top + 4); ctx.lineTo(x + 3, h - BR - 4); ctx.stroke(); });
+      const xm = (xb0 + xb1) / 2, att = TR - 1 - warp.endBusy;
+      UI.text(ctx, "≈", xm, mid("rf"), { align: "center", color: UI.css("--muted"), size: 16 });
+      UI.text(ctx, "attente", xm, mid("gy") - 8, { align: "center", color: ink2, size: 11, weight: "600", box: true });
+      UI.text(ctx, "≈ " + UI.fmt(att, 0) + " ms", xm, mid("gy") + 8, { align: "center", color: ink2, size: 11, weight: "600", box: true });
+    }
+
+    const amp = laneH * 0.36;
+    E.forEach((e, idx) => {
+      const y = mid(e.lane), x0 = X(e.a), x1 = X(e.b), col = colors[e.lane], hot = hover === idx;
+      ctx.lineWidth = hot ? 2.6 : 1.6; ctx.strokeStyle = col; ctx.fillStyle = col;
+      if (e.kind === "sinc") {
+        const A = laneH * 0.4 * (e.amp >= 2 ? 1 : 0.72 * Math.max(0.28, e.amp));
+        ctx.beginPath();
+        for (let i = 0; i <= 60; i++) { const u = -3 + 6 * i / 60, s = u === 0 ? 1 : Math.sin(Math.PI * u) / (Math.PI * u); const px = x0 + (x1 - x0) * i / 60; i ? ctx.lineTo(px, y - A * s) : ctx.moveTo(px, y - A * s); }
+        ctx.globalAlpha = hot ? 0.35 : 0.18; ctx.fill(); ctx.globalAlpha = 1; ctx.stroke();
+        UI.text(ctx, e.lab, (x0 + x1) / 2, y - A - 9, { align: "center", color: col, size: 12, weight: "600", halo: true });
+      } else if (e.kind === "trap" || e.kind === "table") {
+        const A = UI.clamp(e.amp, -1.8, 1.8) * amp * 0.7, r = Math.min(4, (x1 - x0) * 0.2);
+        const n = e.kind === "table" ? 7 : 1;
+        for (let k = 0; k < n; k++) {
+          const Ak = e.kind === "table" ? A * (1 - 2 * k / (n - 1)) : A;
+          ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + r, y - Ak); ctx.lineTo(x1 - r, y - Ak); ctx.lineTo(x1, y);
+          ctx.globalAlpha = e.kind === "table" ? 0.12 : hot ? 0.35 : 0.2; ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1; ctx.stroke();
+        }
+      } else if (e.kind === "adc") {
+        ctx.globalAlpha = hot ? 0.3 : 0.14; ctx.fillStyle = UI.css("--accent");
+        ctx.fillRect(x0, y - amp * 1.15, x1 - x0, amp * 2.3); ctx.globalAlpha = 1;
+        ctx.strokeStyle = UI.css("--accent"); ctx.lineWidth = hot ? 2 : 1; ctx.setLineDash([3, 3]);
+        ctx.strokeRect(x0, y - amp * 1.15, x1 - x0, amp * 2.3); ctx.setLineDash([]);
+        UI.text(ctx, "ADC", x1 + 4, y - amp * 0.95, { color: UI.css("--accent"), size: 11 });
+      } else if (e.kind === "fid" || e.kind === "echo") {
+        ctx.beginPath();
+        for (let i = 0; i <= 120; i++) {
+          const f = i / 120, px = x0 + (x1 - x0) * f;
+          let env, osc;
+          if (e.kind === "fid") { env = Math.exp(-f * 3.2); osc = Math.cos(f * 22); }
+          else { const u = (f - 0.5) * 2; env = e.amp * Math.exp(-Math.abs(u) * 2.6); osc = Math.cos(u * 18); }
+          const py = y - env * osc * amp * 1.05;
+          i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+        }
+        ctx.strokeStyle = ink; ctx.lineWidth = hot ? 2.2 : 1.4; ctx.stroke();
+      }
+    });
+    // repères TE, TE/2, TR
+    const yb = h - BR + 14;
+    const bracket = (t0, t1, lab, yy) => {
+      const a = X(t0), b = X(t1);
+      ctx.strokeStyle = ink2; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(a, yy - 5); ctx.lineTo(a, yy + 5); ctx.moveTo(b, yy - 5); ctx.lineTo(b, yy + 5); ctx.moveTo(a, yy); ctx.lineTo(b, yy); ctx.stroke();
+      UI.text(ctx, lab, (a + b) / 2, yy - 8, { align: "center", color: ink, size: 12, weight: "600", halo: true });
+    };
+    [0, TE].forEach((t) => { ctx.strokeStyle = UI.css("--grid"); ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.moveTo(X(t), top); ctx.lineTo(X(t), yb); ctx.stroke(); ctx.setLineDash([]); });
+    let yy = yb;
+    if (P.seq === "SE") { bracket(0, TE / 2, "TE/2", yy); yy += 16; }
+    bracket(0, TE, "TE = " + UI.fmt(TE, 1) + " ms", yy); yy += 16;
+    bracket(0, TR, "TR = " + UI.fmt(TR, 0) + " ms", yy);
+
+    cv._X = X; cv._mid = mid; cv._laneH = laneH;
+  }
+  function draw() {
+    // TR ne peut pas être plus court que TE + lecture : on corrige aussi le curseur
+    const trMin = P.TE[P.seq] + (P.seq === "GRE" ? 6 : 4);
+    if (P.TR[P.seq] < trMin) { P.TR[P.seq] = trMin; trS.set(trMin, true); }
+    cv.redraw();
+  }
+
+  cv.cv.addEventListener("pointermove", (ev) => {
+    const r = cv.cv.getBoundingClientRect(), px = ev.clientX - r.left, py = ev.clientY - r.top;
+    let best = null;
+    elems.forEach((e, i) => {
+      const x0 = cv._X(e.a), x1 = cv._X(e.b), y = cv._mid(e.lane);
+      if (px >= x0 - 3 && px <= x1 + 3 && Math.abs(py - y) < cv._laneH / 2) best = i;
+    });
+    if (best !== hover) { hover = best; draw(); UI.$("#desc").innerHTML = best == null ? defaultDesc() : elems[best].desc; }
+  });
+  cv.cv.addEventListener("pointerleave", () => { hover = null; draw(); UI.$("#desc").innerHTML = defaultDesc(); });
+  const defaultDesc = () => "Survolez un élément du chronogramme (impulsion, gradient, signal) pour afficher son rôle. <span class=\"note\">(Le schéma compresse l'attente jusqu'au TR suivant dans la coupure ≈, dont la durée réelle est indiquée.)</span>";
+  UI.$("#desc").innerHTML = defaultDesc();
+  sync();
+})();
+</script>
+</body>
+</html>

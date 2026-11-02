@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Le même cerveau en T2 et en T2*</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  .im { height: 300px; }
+  .ro { margin-top: 8px; min-height: 2.9em; }
+</style>
+</head>
+<body>
+<div class="controls" id="ctl"></div>
+<div class="grid3">
+  <div class="card"><div class="plot im" id="ise"></div></div>
+  <div class="card"><div class="plot im" id="igre"></div></div>
+  <div class="card"><div class="plot im" id="irat"></div></div>
+</div>
+<div class="readout ro" id="ro"></div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script src="data/cerveau.js"></script>
+<script>
+(function () {
+  const TR = 4000, BRUIT = 0.004;
+  const P = { TE: 40, B0: 3 };
+  const F = MRI.cerveau(), n = F.w * F.h;
+
+  // Deux images du même cerveau, mêmes TR et TE, sans puis avec le 180°.
+  // Écho de gradient : 1/T2* = 1/T2 + 1/T2' ; la part T2' (tissu, champ à travers
+  // la coupe, veines) est proportionnelle à B0, d'où le facteur b = B0 / 3 T.
+  function calculer() {
+    const b = P.B0 / 3, te = P.TE, tes = te / 1000;
+    const sSE = {}, sGRE = {};
+    for (const k of MRI.ids) {
+      const t = MRI.T[k], m = t.DP * (1 - Math.exp(-TR / t.T1));
+      const r2p = 1 / t.T2s - 1 / t.T2;
+      sSE[k] = m * Math.exp(-te / t.T2);
+      sGRE[k] = m * Math.exp(-te / t.T2 - b * te * r2p);
+    }
+    const se = new Float32Array(n), gre = new Float32Array(n), rat = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      let a = 0, g = 0;
+      for (const k of MRI.ids) { const f = F.f[k][i]; if (f) { a += f * sSE[k]; g += f * sGRE[k]; } }
+      const x = b * F.g[i] * tes;
+      const sinc = x < 1e-6 ? 1 : Math.abs(Math.sin(Math.PI * x) / (Math.PI * x));
+      g *= sinc * Math.exp(-b * F.r2p[i] * tes);
+      se[i] = Math.hypot(a + BRUIT * F.nr[i], BRUIT * F.ni[i]);
+      gre[i] = Math.hypot(g + BRUIT * F.nr[i], BRUIT * F.ni[i]);
+      rat[i] = F.head[i] > 0.5 && a > 0.02 ? Math.min(1, g / a) : 0;
+    }
+    return { se, gre, rat };
+  }
+
+  UI.slider("#ctl", { label: "TE (le même pour les deux images)", min: 5, max: 80, step: 1, value: P.TE, unit: "ms",
+    fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.TE = v; redraw(); } });
+  const sB0 = UI.seg("#ctl", { label: "Champ B₀", value: P.B0, options: [[1.5, "1,5 T"], [3, "3 T"]], onChange: (v) => { P.B0 = v; redraw(); } });
+
+  let R = null, hi = 1;
+  const sub = () => `TR ${TR} ms · TE ${UI.fmt(P.TE, 0)} ms`;
+  const cse = UI.canvas("#ise", (ctx, w, h) => MRI.dessiner(ctx, R.se, { x: 0, y: 0, w, h }, { lo: 0, hi, label: "Écho de spin (avec 180°) → T₂", sub: sub() }));
+  const cgre = UI.canvas("#igre", (ctx, w, h) => MRI.dessiner(ctx, R.gre, { x: 0, y: 0, w, h }, { lo: 0, hi, label: "Écho de gradient → T₂*", sub: sub() + " · même fenêtrage" }));
+  const crat = UI.canvas("#irat", (ctx, w, h) => MRI.dessiner(ctx, R.rat, { x: 0, y: 0, w, h }, { lo: 0, hi: 1, label: "Gradient ÷ spin", sub: "blanc : rien perdu · noir : tout perdu" }));
+
+  function readout() {
+    // substance blanche « loin de tout » : seule la part T2' propre au tissu joue
+    const sb = MRI.T.sb, b = P.B0 / 3;
+    const loin = Math.exp(-b * P.TE * (1 / sb.T2s - 1 / sb.T2));
+    const v = [];
+    for (let i = 0; i < n; i++) if (R.rat[i] > 0) v.push(R.rat[i]);
+    v.sort((x, y) => x - y);
+    const pire = v[Math.floor(0.02 * v.length)];
+    UI.$("#ro").innerHTML = `À ${UI.fmt(P.B0, 1)} T et TE = ${UI.fmt(P.TE, 0)} ms, l'écho de gradient garde ${UI.fmt(100 * loin, 0)} % du signal de l'écho de spin dans la substance blanche loin de l'air. ` +
+      `Dans les 2 % de voxels les plus touchés (bas du lobe frontal près du sinus, lobes temporaux près des rochers, veines), il en garde moins de ${UI.fmt(100 * pire, 0)} %.`;
+  }
+
+  function redraw() {
+    R = calculer();
+    hi = MRI.fenetre(R.se);
+    cse.redraw(); cgre.redraw(); crat.redraw(); readout();
+  }
+  redraw();
+
+  // accès pour les captures (outils/captures.py)
+  window.__etat = (o) => { Object.assign(P, o); sB0.set(P.B0, true); redraw(); };
+})();
+</script>
+</body>
+</html>

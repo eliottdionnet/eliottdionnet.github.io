@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eliott Dionnet, portfolio</title>
+<meta name="description" content="Portfolio d'Eliott Dionnet. Projets d'imagerie, d'IRM et d'apprentissage automatique avec leurs rapports et leur code, parcours et CV.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230d1821'/%3E%3Cellipse cx='16' cy='16' rx='9' ry='6' fill='none' stroke='%23f2b62a' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='%23e4edf2'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..600;1,8..60,400&display=swap">
+<link rel="stylesheet" href="/accueil/style.css?v=6">
+</head>
+<body>
+<header class="wrap top">
+  <a class="back" href="/">Accueil</a>
+  <nav aria-label="Liens">
+    <a href="/accueil/cv-eliott-dionnet.pdf">CV en PDF</a>
+    <a href="https://github.com/eliottdionnet">GitHub</a>
+    <a href="#contact">Me contacter</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <section class="pf-hero">
+    <h1>Eliott Dionnet</h1>
+    <p class="lede">Élève ingénieur en double diplôme entre Télécom Paris, école de l'Institut Polytechnique de Paris, et Polytechnique Montréal. Diplômé en physique fondamentale de l'Université Paris-Saclay. Je m'intéresse au calcul stochastique, au traitement d'image et à l'apprentissage automatique.</p>
+  </section>
+
+  <section class="block" id="projets" aria-labelledby="s-projets">
+    <h2 id="s-projets">Projets</h2>
+    <div>
+      <article class="feat">
+        <a class="thumb plate" href="/irm/" tabindex="-1" aria-hidden="true"><img class="coupe" src="/accueil/irm-coupe.png" alt="" width="267" height="320"></a>
+        <div>
+          <h3>Contraste en IRM</h3>
+          <p class="ctx">Projet de mi-session GBM8360E, Polytechnique Montréal, 2026</p>
+          <p>J'ai repris le cours sur le contraste et les séquences d'impulsion pour en faire un livre où chaque notion se manipule. Les formules y sont démontrées pas à pas et une vingtaine de figures interactives tournent directement dans le navigateur, du vecteur d'aimantation jusqu'à une IRM virtuelle sur une coupe de cerveau simulée.</p>
+          <p class="tools">MyST, JavaScript, simulateur de Bloch, KaTeX</p>
+          <p class="links"><a href="/irm/">Ouvrir le livre</a></p>
+        </div>
+      </article>
+
+      <article class="feat">
+        <a class="thumb plate" href="https://perso.telecom-paristech.fr/edionnet-24/abstractviz" tabindex="-1" aria-hidden="true"><img src="/accueil/abstractviz-carte.svg" alt="" width="320" height="200"></a>
+        <div>
+          <h3>AbstractViz</h3>
+          <p class="ctx">Projet d'imagerie avancée IM06, Télécom Paris, juin 2026, en équipe de quatre</p>
+          <p>Nous avons classé environ 1&nbsp;700 peintures abstraites à partir de leurs seules propriétés visuelles, sans rien savoir des artistes. Les descripteurs de couleur et de texture sont fusionnés avec les espaces latents d'un CNN et d'un autoencodeur variationnel avant une réduction par ACP et un partitionnement par K-Means.</p>
+          <p>J'ai construit l'interface d'exploration. Sur la carte, les points deviennent des tableaux quand on zoome, chaque classe porte son nom et chaque œuvre montre ses voisins visuels.</p>
+          <p class="tools">Python, PyTorch, Flask, deck.gl, WebGL</p>
+          <p class="links">
+            <a href="https://perso.telecom-paristech.fr/edionnet-24/abstractviz">Ouvrir la carte</a>
+            <a href="https://github.com/eliottdionnet/Principaux-Rapports-D-Etudes/blob/b23af3852b4b5fe1f7fbd161231eafe19af3c3a3/Extraction%20de%20Caract%C3%A9ristiques%20et%20Fusion%20Multimodale%20par%20Apprentissage%20Non%20Supervis%C3%A9.pdf">Lire le rapport</a>
+            <a href="https://github.com/blastoncrush/abstract_art_classification">Voir le code</a>
+          </p>
+        </div>
+      </article>
+
+      <article class="feat">
+        <a class="thumb plate" href="https://github.com/eliottdionnet/Principaux-Rapports-D-Etudes/blob/b23af3852b4b5fe1f7fbd161231eafe19af3c3a3/Classification%20Automatique%20par%20Apprentissage%20Profond%20sur%20Donn%C3%A9es%20D%C3%A9s%C3%A9quilibr%C3%A9es.pdf" tabindex="-1" aria-hidden="true"><img src="/accueil/projet-classes.svg" alt="" width="320" height="200"></a>
+        <div>
+          <h3>Classification de cellules sanguines</h3>
+          <p class="ctx">Défi Kaggle du projet de recherche IMA205, Télécom Paris, 2026</p>
+          <p>Il fallait reconnaître treize types de cellules sanguines sur des images de microscopie. Près de la moitié des images d'entraînement appartiennent à une seule classe et certaines n'en comptent que quelques dizaines. Le modèle repose sur un ResNet50 entraîné en deux phases par transfert d'apprentissage, avec des classes pondérées, une validation en cinq plis stratifiés, un vote souple et de l'augmentation au test.</p>
+          <p class="tools">Python, PyTorch, ResNet50, scikit-learn</p>
+          <p class="links"><a href="https://github.com/eliottdionnet/Principaux-Rapports-D-Etudes/blob/b23af3852b4b5fe1f7fbd161231eafe19af3c3a3/Classification%20Automatique%20par%20Apprentissage%20Profond%20sur%20Donn%C3%A9es%20D%C3%A9s%C3%A9quilibr%C3%A9es.pdf">Lire le rapport</a></p>
+        </div>
+      </article>
+
+      <article class="feat">
+        <a class="thumb plate" href="/accueil/rapport-slic.pdf" tabindex="-1" aria-hidden="true"><img class="plein" src="/accueil/projet-slic.jpg" alt="" width="480" height="320"></a>
+        <div>
+          <h3>Superpixels SLIC, de l'image au cube hyperspectral</h3>
+          <p class="ctx">Projet d'imagerie, Télécom Paris, 2025, avec la contribution d'Enguerrand Le Niliot</p>
+          <p>Nous avons réécrit l'algorithme SLIC à la main, du gradient couleur jusqu'au rattachement des régions isolées, puis mesuré son erreur de sous-segmentation sur la base de Berkeley face à scikit-image, en faisant varier le nombre de superpixels et la compacité. La méthode est ensuite étendue aux images hyperspectrales (Salinas, Pavia) avec un gradient calculé sur toutes les bandes, puis aux volumes en trois dimensions sous forme de supervoxels.</p>
+          <p class="tools">Python, NumPy, OpenCV, scikit-image</p>
+          <p class="links"><a href="/accueil/rapport-slic.pdf">Lire le rapport</a><a href="https://doi.org/10.1109/TPAMI.2012.120">Article de référence (Achanta et al., 2012)</a></p>
+        </div>
+      </article>
+
+      <article class="feat">
+        <a class="thumb plate" href="/accueil/rapport-quantique.pdf" tabindex="-1" aria-hidden="true"><img src="/accueil/projet-quantique.svg" alt="" width="320" height="200"></a>
+        <div>
+          <h3>Preuve de calcul quantique sur machine IBM</h3>
+          <p class="ctx">Projet Artishow, Télécom Paris, 2025, avec Arthur Evain, Enguerrand Le Niliot et Thomas Vidal, encadré par Weiqiang Wen</p>
+          <p>Comment vérifier qu'une machine distante calcule vraiment de façon quantique&nbsp;? Nous avons implémenté en Qiskit le test DCP de Lin et Wen, où la machine doit retrouver la parité d'un secret caché dans des états quantiques grâce à une transformée de Fourier quantique. Sur un processeur d'IBM, elle la retrouve dans 84&nbsp;% des manches, contre 50&nbsp;% pour un joueur classique. La location de clés quantiques fondée sur LWE fabrique les mêmes états par un canal classique, mais les paramètres exécutables aujourd'hui ne suffisent pas encore à y cacher le secret.</p>
+          <p>J'ai étudié la location de clés avec Enguerrand, travaillé sur le placement des qubits sur les machines IBM, puis finalisé le protocole DCP et mis en forme les résultats.</p>
+          <p class="tools">Python, Qiskit, Qiskit Runtime, IBM Quantum</p>
+          <p class="links"><a href="/accueil/rapport-quantique.pdf">Lire le rapport</a><a href="https://arxiv.org/abs/2202.06984">Article de référence (Lin et Wen, 2022)</a></p>
+        </div>
+      </article>
+
+      <article class="feat">
+        <a class="thumb plate" href="/accueil/rapport-robot.pdf" tabindex="-1" aria-hidden="true"><img src="/accueil/projet-robot.svg" alt="" width="320" height="200"></a>
+        <div>
+          <h3>Robot mobile autonome</h3>
+          <p class="ctx">Projet Artefact (PROJ103), Télécom Paris, 2024–2025, avec Alexis Cordelle, Mohamed Boudouh et Théo Palagi</p>
+          <p>Un robot sur Raspberry Pi qui parcourt une arène quadrillée pour trouver et capturer des balises ArUco. Ses déplacements sont asservis par un PID sur les encodeurs des roues, sa caméra calibrée donne la pose de chaque marqueur, et pour l'épreuve finale il suit les ordres d'un serveur qui coordonne plusieurs robots. Il a réussi l'épreuve finale.</p>
+          <p>J'ai câblé la Raspberry Pi, les moteurs et la batterie, pris en main la carte de commande des moteurs, écrit les programmes de pilotage et monté le robot au Fablab avec Alexis.</p>
+          <p class="tools">Python, Raspberry Pi, OpenCV, ArUco, I²C, WebSocket</p>
+          <p class="links"><a href="/accueil/rapport-robot.pdf">Lire le rapport</a></p>
+        </div>
+      </article>
+
+      <article class="feat">
+        <a class="thumb plate" href="https://github.com/eliottdionnet/Principaux-Rapports-D-Etudes/blob/b23af3852b4b5fe1f7fbd161231eafe19af3c3a3/Analyse%20de%20Stabilit%C3%A9%20et%20Convergence%20de%20Sch%C3%A9mas%20Num%C3%A9riques%20(Syst%C3%A8mes%20Diff%C3%A9rentiels).pdf" tabindex="-1" aria-hidden="true"><img src="/accueil/projet-euler.svg" alt="" width="320" height="200"></a>
+        <div>
+          <h3>Stabilité et convergence de schémas numériques</h3>
+          <p class="ctx">Projet de mathématiques appliquées MACS, Télécom Paris</p>
+          <p>Une preuve de convergence du schéma d'Euler explicite pour un système différentiel non linéaire qui modélise des flux physiques. La stabilité locale vient d'une condition de Lipschitz sur le domaine physiquement admissible et le lemme de Grönwall permet de majorer l'erreur globale.</p>
+          <p class="tools">Équations différentielles, analyse numérique</p>
+          <p class="links"><a href="https://github.com/eliottdionnet/Principaux-Rapports-D-Etudes/blob/b23af3852b4b5fe1f7fbd161231eafe19af3c3a3/Analyse%20de%20Stabilit%C3%A9%20et%20Convergence%20de%20Sch%C3%A9mas%20Num%C3%A9riques%20(Syst%C3%A8mes%20Diff%C3%A9rentiels).pdf">Lire le rapport</a></p>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="block" aria-labelledby="s-parcours">
+    <h2 id="s-parcours">Parcours</h2>
+    <div>
+      <ol class="timeline" reversed>
+        <li>
+          <span class="when">Depuis 2026</span>
+          <div>
+            <strong>Polytechnique Montréal</strong>
+            <span class="place">Montréal, Québec</span>
+            <p>Double diplôme d'ingénieur avec Télécom Paris.</p>
+          </div>
+        </li>
+        <li>
+          <span class="when">2025 à 2026</span>
+          <div>
+            <strong>Master de physique fondamentale</strong>
+            <span class="place">Université Paris-Saclay, Orsay</span>
+            <p>Physique moléculaire, physique des particules, lasers, plasmas et optique.</p>
+          </div>
+        </li>
+        <li>
+          <span class="when">2024 à 2025</span>
+          <div>
+            <strong>Licence de physique fondamentale</strong>
+            <span class="place">Université Paris-Saclay, Orsay</span>
+            <p>Mécanique quantique, optique, mécanique analytique et physique statistique.</p>
+          </div>
+        </li>
+        <li>
+          <span class="when">Depuis 2024</span>
+          <div>
+            <strong>Diplôme d'ingénieur, Télécom Paris</strong>
+            <span class="place">Institut Polytechnique de Paris, Palaiseau</span>
+            <p>Spécialités Modélisation aléatoire et calcul scientifique (martingales, Monte-Carlo, processus brownien et de Poisson) puis Imagerie (segmentation, restauration, imagerie 3D, hyperspectrale et médicale).</p>
+          </div>
+        </li>
+        <li>
+          <span class="when">2022 à 2024</span>
+          <div>
+            <strong>Classe préparatoire PCSI puis PC*</strong>
+            <span class="place">Lycée Blaise Pascal, Clermont-Ferrand</span>
+            <p>Passage en PC* après une première place en PCSI. Admis au concours commun Mines-Ponts.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="block" aria-labelledby="s-exp">
+    <h2 id="s-exp">Expériences</h2>
+    <div>
+      <ul class="timeline">
+        <li>
+          <span class="when">2025 à 2026</span>
+          <div>
+            <strong>Fondateur et président du Salon du Terroir</strong>
+            <span class="place">Association de Télécom Paris</span>
+            <p>Deux mandats à la tête de l'association que j'ai créée.</p>
+          </div>
+        </li>
+        <li>
+          <span class="when">Été 2025</span>
+          <div>
+            <strong>Technicien informatique</strong>
+            <span class="place">Vulcania, Saint-Ours</span>
+            <p>Maintenance d'un parc de plus de 200 postes et support aux utilisateurs. J'ai aussi participé à la mise en place d'un plan de sécurité informatique avec SigNoz.</p>
+          </div>
+        </li>
+        <li>
+          <span class="when">2024 à 2025</span>
+          <div>
+            <strong>Trésorier du Gala</strong>
+            <span class="place">Télécom Paris</span>
+          </div>
+        </li>
+        <li>
+          <span class="when">2020 à 2022</span>
+          <div>
+            <strong>Professeur particulier</strong>
+            <span class="place">Auvergne</span>
+            <p>Cours de sciences pour des collégiens et des lycéens.</p>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="block" aria-labelledby="s-comp">
+    <h2 id="s-comp">Compétences</h2>
+    <div>
+      <dl class="skills">
+        <dt>Programmation</dt>
+        <dd>Python avec NumPy, SciPy, PyTorch, OpenCV, Kivy et Qiskit. C, C++, Java, HTML et JavaScript.</dd>
+        <dt>Mathématiques</dt>
+        <dd>Processus stochastiques, méthodes de Monte-Carlo, statistique et calcul scientifique.</dd>
+        <dt>Imagerie</dt>
+        <dd>Segmentation, restauration, imagerie hyperspectrale et imagerie médicale.</dd>
+        <dt>Physique</dt>
+        <dd>Mécanique quantique, plasmas, physique des particules et relativité restreinte.</dd>
+        <dt>Langues</dt>
+        <dd>Français natif. Anglais B2 avec certification Cambridge. Espagnol B1. Japonais A1.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section class="block" aria-labelledby="s-hors">
+    <h2 id="s-hors">En dehors</h2>
+    <div>
+      <p>Tir à l'arc en club de 2015 à 2019, champion départemental du Puy-de-Dôme sur toute cette période et troisième au championnat régional Auvergne-Rhône-Alpes en 2019. Rugby à sept pendant cinq ans. Aujourd'hui ski, laser run, course à pied et jeux vidéo.</p>
+    </div>
+  </section>
+
+  <section class="block" id="contact" aria-labelledby="s-contact">
+    <h2 id="s-contact">Contact</h2>
+    <div>
+      <dl class="skills">
+        <dt>Au Canada</dt>
+        <dd><a href="mailto:eliott.dionnet@etud.polymtl.ca">eliott.dionnet@etud.polymtl.ca</a></dd>
+        <dt>En France</dt>
+        <dd><a href="mailto:eliott.dionnet@telecom-paris.fr">eliott.dionnet@telecom-paris.fr</a></dd>
+        <dt>Code</dt>
+        <dd><a href="https://github.com/eliottdionnet">github.com/eliottdionnet</a></dd>
+        <dt>CV</dt>
+        <dd><a href="/accueil/cv-eliott-dionnet.pdf">Télécharger le CV en PDF</a></dd>
+      </dl>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap">
+  <div class="foot">
+    <span>Eliott Dionnet</span>
+    <a href="mailto:eliott.dionnet@etud.polymtl.ca">eliott.dionnet@etud.polymtl.ca</a>
+    <a href="mailto:eliott.dionnet@telecom-paris.fr">eliott.dionnet@telecom-paris.fr</a>
+    <a href="https://github.com/eliottdionnet">GitHub</a>
+    <a href="/">Retour à l'accueil</a>
+  </div>
+</footer>
+</body>
+</html>

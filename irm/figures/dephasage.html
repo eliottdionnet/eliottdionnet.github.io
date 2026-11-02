@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Déphasage intra-voxel et T2*</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #vox, #pha { height: 232px; }
+  #sig { height: 180px; }
+</style>
+</head>
+<body>
+<div class="controls" id="ctl"></div>
+<div class="grid2">
+  <div class="card">
+    <h4>Le voxel : 49 isochromats à des positions différentes</h4>
+    <div class="plot" id="vox"></div>
+  </div>
+  <div class="card">
+    <h4>Plan transverse : somme vectorielle</h4>
+    <div class="plot" id="pha"></div>
+  </div>
+</div>
+<div class="card" style="margin-top:12px">
+  <h4>Signal mesuré pour ce voxel |M<sub>xy</sub>(t)|</h4>
+  <div class="plot" id="sig"></div>
+  <div class="readout" id="ro"></div>
+</div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script>
+(function () {
+  const P = { width: 1.5, kind: "lorentz", T2: 80 };
+  const TM = 150, NG = 7;
+  let t = 0, grid = [];
+
+  // ----------------------------------------------------------- contrôles
+  const pre = UI.seg("#ctl", { label: "Hors-résonance dans le voxel", value: 1.5, options: [[0, "aucune"], [1.5, "légère"], [8, "sévère"]],
+    onChange: (v) => { wS.set(v, true); P.width = v; build(); } });
+  const wS = UI.slider("#ctl", { label: "Demi-largeur Δf", min: 0, max: 25, step: 0.5, value: P.width, unit: "Hz",
+    fmt: (v) => UI.fmt(v, 1), onInput: (v) => { P.width = v; pre.set(null, true); build(); } });
+  UI.seg("#ctl", { label: "Distribution", value: P.kind, options: [["lorentz", "lorentzienne"], ["gauss", "gaussienne"]], onChange: (v) => { P.kind = v; build(); } });
+  UI.slider("#ctl", { label: "T₂", min: 30, max: 200, step: 5, value: P.T2, unit: "ms", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.T2 = v; redraw(); } });
+  const bx = UI.el("div", { class: "row", style: "gap:6px;align-items:flex-end;flex:0 0 auto" }); UI.$("#ctl").appendChild(bx);
+  const anim = new UI.Anim((dt) => { t += dt * 30; if (t >= TM) { t = TM; redraw(); return false; } redraw(); });
+  UI.playButton(bx, anim);
+  UI.button(bx, "↺", () => { anim.pause(); t = 0; redraw(); });
+
+  // ------------------------------------------- isochromats (pas de hasard)
+  function build() {
+    // motif spatial lisse du champ dans le voxel (comme près d'une interface air/tissu)
+    const cells = [];
+    for (let i = 0; i < NG; i++) for (let j = 0; j < NG; j++) {
+      const x = (j - 3) / 3, y = (3 - i) / 3;
+      cells.push({ i, j, p: 0.8 * x + 0.55 * y + 0.35 * x * y + 0.2 * x * x });
+    }
+    const order = cells.slice().sort((a, b) => a.p - b.p);
+    const n = NG * NG;
+    order.forEach((c, k) => {
+      const q = 0.03 + 0.94 * (k + 0.5) / n;                 // quantiles centraux pour l'affichage
+      c.f = MRI.quantile(q, P.width, P.kind);
+    });
+    grid = cells;
+    redraw();
+  }
+  const phase = (f, tt) => 2 * Math.PI * f * tt / 1000;   // rad
+  // Somme sur un continuum d'isochromats (limite N -> ∞ des 49 flèches affichées)
+  const voxelSignal = (tt) => Math.exp(-tt / P.T2) * MRI.dephasing(tt, P.width, P.kind);
+  function fmax() { return Math.max(...grid.map((c) => Math.abs(c.f))) || 1; }
+
+  // ------------------------------------------------------------- couleurs
+  function hex2rgb(h) { h = h.replace("#", ""); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); }
+  function divColor(f, fm, a = 1) {
+    const u = UI.clamp(f / fm, -1, 1), n = hex2rgb(UI.css("--neg")), m = hex2rgb(UI.css("--mid")), p = hex2rgb(UI.css("--pos"));
+    const c = (u < 0 ? n : p).map((v, i) => Math.round(m[i] + (v - m[i]) * Math.abs(u)));
+    return `rgba(${c.join(",")},${a})`;
+  }
+
+  // --------------------------------------------------------------- voxel
+  const cv = UI.canvas("#vox", (ctx, w, h) => {
+    const s = Math.min(w - 20, h - 26), x0 = (w - s) / 2, y0 = 4, cs = s / NG, fm = fmax(), e2 = Math.exp(-t / P.T2);
+    grid.forEach((c) => {
+      const cx = x0 + c.j * cs, cy = y0 + c.i * cs;
+      ctx.fillStyle = divColor(c.f, fm, P.width ? 0.28 : 0); ctx.fillRect(cx + 1, cy + 1, cs - 2, cs - 2);
+      const a = phase(c.f, t) - Math.PI / 2, L = cs * 0.4 * (0.35 + 0.65 * e2); // départ selon -y (après 90°x)
+      const mx = cx + cs / 2, my = cy + cs / 2;
+      UI.arrow(ctx, mx - Math.cos(a) * L * 0.3, my + Math.sin(a) * L * 0.3, mx + Math.cos(a) * L, my - Math.sin(a) * L, divColor(c.f, fm), 1.8, 6);
+    });
+    ctx.strokeStyle = UI.css("--axis"); ctx.lineWidth = 1; ctx.strokeRect(x0 + 0.5, y0 + 0.5, s, s);
+    UI.text(ctx, P.width ? "B₀ local plus faible ← → plus fort" : "champ parfaitement homogène", w / 2, y0 + s + 12, { align: "center", size: 11.5, color: UI.css("--muted") });
+  });
+
+  // --------------------------------------------------------------- phaseurs
+  const cp = UI.canvas("#pha", (ctx, w, h) => {
+    const R = Math.min(w, h) * 0.42, cx = w / 2, cy = h / 2, fm = fmax(), e2 = Math.exp(-t / P.T2);
+    ctx.strokeStyle = UI.css("--grid"); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2 * Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - R - 8, cy); ctx.lineTo(cx + R + 8, cy); ctx.moveTo(cx, cy - R - 8); ctx.lineTo(cx, cy + R + 8); ctx.stroke();
+    UI.text(ctx, "x", cx + R + 10, cy, { color: UI.css("--muted"), size: 12 });
+    UI.text(ctx, "y", cx + 4, cy - R - 10, { color: UI.css("--muted"), size: 12 });
+    grid.forEach((c) => {
+      const a = phase(c.f, t) - Math.PI / 2;
+      UI.arrow(ctx, cx, cy, cx + Math.cos(a) * R * e2, cy - Math.sin(a) * R * e2, divColor(c.f, fm, 0.8), 1.2, 6);
+    });
+    // somme : distribution symétrique -> la résultante reste le long de -y et rétrécit
+    const m = voxelSignal(t);
+    UI.arrow(ctx, cx, cy, cx, cy + m * R, UI.css("--m-sum"), 3.4, 11);
+    UI.text(ctx, "t = " + UI.fmt(t, 1) + " ms", 8, 12, { color: UI.css("--ink"), size: 13, weight: "600" });
+    UI.text(ctx, "— somme (signal)", w - 8, h - 10, { align: "right", color: UI.css("--ink2"), size: 11.5 });
+  });
+
+  // ---------------------------------------------------------------- signal
+  const cs = UI.canvas("#sig", draw);
+  const pl = new UI.Plot(cs, { x: { min: 0, max: TM, label: "t (ms)" }, y: { min: 0, max: 1, ticks: [0, 0.25, 0.5, 0.75, 1] }, pad: { l: 46, r: 90, t: 8, b: 34 } });
+  function T2p() { return P.width > 0 ? 1000 / (2 * Math.PI * P.width) : Infinity; }
+  function series() {
+    const out = [
+      { name: "T₂ seul", color: UI.css("--muted"), f: (x) => Math.exp(-x / P.T2) },
+      { name: "voxel", color: UI.css("--m-sum"), f: voxelSignal },
+    ];
+    if (P.kind === "lorentz") out.push({ name: "exp(−t/T₂*)", color: UI.css("--c-violet"), f: (x) => Math.exp(-x * (1 / P.T2 + 1 / T2p())) });
+    return out;
+  }
+  pl.hoverable(cs, series, { xName: "t (ms)", y: (v) => UI.fmt(v, 3) });
+  function draw(ctx, w, h) {
+    pl.frame(ctx, w, h);
+    const ser = series();
+    pl.func(ser[0].f, { color: ser[0].color, width: 1.5, dash: [5, 4] });
+    if (ser[2]) pl.func(ser[2].f, { color: ser[2].color, width: 1.5, dash: [1.5, 3] });
+    const xs = [], ys = [];
+    for (let x = 0; x <= t + 1e-9; x += TM / 400) { xs.push(x); ys.push(voxelSignal(x)); }
+    xs.push(t); ys.push(voxelSignal(t));
+    pl.line(xs, ys, { color: ser[1].color, width: 2.4 });
+    pl.dot(t, voxelSignal(t), { color: ser[1].color });
+    pl.endLabels([ser[0], ...(ser[2] ? [ser[2]] : [])], TM);
+    pl.drawHover();
+  }
+  function readout() {
+    const tp = T2p(), ts = 1 / (1 / P.T2 + 1 / tp);
+    UI.$("#ro").innerHTML = P.kind === "lorentz"
+      ? `1/T₂* = 1/T₂ + 1/T₂′ → T₂′ = 1/(2π·${UI.fmt(P.width, 1)} Hz) = ${isFinite(tp) ? UI.fmt(tp, 1) + " ms" : "∞"}, T₂* = ${UI.fmt(ts, 1)} ms (T₂ = ${P.T2} ms)`
+      : `Distribution gaussienne : la décroissance n'est plus exponentielle (profil gaussien en temps) — T₂* n'est qu'une approximation.`;
+  }
+  function redraw() { cv.redraw(); cp.redraw(); cs.redraw(); readout(); }
+  build();
+  window.__temps = (ms) => { t = ms; redraw(); };
+})();
+</script>
+</body>
+</html>

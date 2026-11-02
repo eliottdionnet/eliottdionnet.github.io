@@ -1,0 +1,155 @@
+/* ==========================================================================
+   Style commun des figures interactives (iframes du livre MyST).
+   Les couleurs sont des rôles (variables CSS) : le mode sombre est piloté par
+   la classe .dark sur <html>, posée par ui.js pour suivre le thème du livre.
+   ========================================================================== */
+:root {
+  color-scheme: light;
+  --bg: #fcfcfb;          /* surface de la figure */
+  --panel: #ffffff;       /* fond des zones de tracé */
+  --ink: #0b0b0b;
+  --ink2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --wash: rgba(42, 120, 214, 0.08);
+  --accent: #2a78d6;
+  --accent-ink: #ffffff;
+  --focus: #2a78d6;
+
+  /* Tissus : palette catégorielle validée (ordre fixe, jamais recyclé) */
+  --t-lcr: #2a78d6;  /* 1 bleu    */
+  --t-sb:  #eb6834;  /* 2 orange  */
+  --t-sg:  #1baf7a;  /* 3 aqua    */
+  --t-gr:  #eda100;  /* 4 jaune   */
+  --t-les: #e87ba4;  /* 5 magenta */
+  --t-mu:  #008300;  /* 6 vert    */
+  --c-violet: #4a3aa7;
+  --c-rouge: #e34948;
+
+  /* Divergent (offsets de fréquence négatifs / positifs, phase) */
+  --neg: #2a78d6;
+  --mid: #b9b8b0;
+  --pos: #e34948;
+
+  /* Vecteurs d'aimantation */
+  --m-sum: #0b0b0b;
+  --rf: #4a3aa7;
+}
+html.dark {
+  color-scheme: dark;
+  --bg: #1a1a19;
+  --panel: #131312;
+  --ink: #ffffff;
+  --ink2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #4a4a46;
+  --border: rgba(255, 255, 255, 0.10);
+  --wash: rgba(57, 135, 229, 0.14);
+  --accent: #3987e5;
+  --accent-ink: #ffffff;
+  --focus: #6da7ec;
+
+  --t-lcr: #3987e5;
+  --t-sb:  #d95926;
+  --t-sg:  #199e70;
+  --t-gr:  #c98500;
+  --t-les: #d55181;
+  --t-mu:  #008300;
+  --c-violet: #9085e9;
+  --c-rouge: #e66767;
+
+  --neg: #3987e5;
+  --mid: #5d5d58;
+  --pos: #e66767;
+
+  --m-sum: #ffffff;
+  --rf: #9085e9;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+body { padding: 10px 12px 12px; overflow-x: hidden; }
+
+/* ---------- Mise en page ---------- */
+.row   { display: flex; gap: 12px; flex-wrap: wrap; }
+.col   { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.grow  { flex: 1 1 0; min-width: 240px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+@media (max-width: 620px) {
+  .grid2, .grid3 { grid-template-columns: 1fr; }
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  min-width: 0;
+  position: relative;
+}
+.card h4 {
+  margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--ink);
+}
+.plot { width: 100%; height: 240px; display: block; position: relative; }
+.plot canvas { width: 100%; height: 100%; display: block; touch-action: pan-y; }
+
+/* ---------- Contrôles ---------- */
+.controls { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: flex-end; margin-bottom: 8px; }
+.ctl { display: flex; flex-direction: column; gap: 2px; min-width: 165px; flex: 1 1 165px; }
+.ctl label, .ctl .lab { font-size: 12px; color: var(--ink2); display: flex; justify-content: space-between; gap: 8px; }
+.ctl .val { color: var(--ink); font-variant-numeric: tabular-nums; font-weight: 600; }
+input[type=range] { width: 100%; accent-color: var(--accent); margin: 2px 0; }
+
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; flex-wrap: wrap; }
+.seg button {
+  font: inherit; font-size: 12.5px; padding: 5px 10px; border: 0; cursor: pointer;
+  background: transparent; color: var(--ink2);
+  border-right: 1px solid var(--border);
+}
+.seg button:last-child { border-right: 0; }
+.seg button:hover { background: var(--wash); color: var(--ink); }
+.seg button.on { background: var(--accent); color: var(--accent-ink); }
+
+.btn {
+  font: inherit; font-size: 12.5px; padding: 5px 12px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel); color: var(--ink);
+}
+.btn:hover { background: var(--wash); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+.chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--ink2); cursor: pointer; user-select: none; }
+.chk input { accent-color: var(--accent); margin: 0; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+/* ---------- Texte ---------- */
+.readout { font-size: 12.5px; color: var(--ink2); font-variant-numeric: tabular-nums; }
+.readout b { color: var(--ink); }
+.note { font-size: 12px; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ink2); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.pill { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11.5px; background: var(--wash); color: var(--ink); }
+
+/* ---------- Infobulle ---------- */
+.tip {
+  position: absolute; pointer-events: none; z-index: 5;
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.12);
+  padding: 6px 8px; font-size: 12px; line-height: 1.35;
+  font-variant-numeric: tabular-nums; white-space: nowrap; display: none;
+}
+.tip .t-h { color: var(--ink2); margin-bottom: 2px; }
+.tip .t-r { display: flex; align-items: center; gap: 6px; }
+.tip .t-r b { margin-left: auto; padding-left: 10px; }

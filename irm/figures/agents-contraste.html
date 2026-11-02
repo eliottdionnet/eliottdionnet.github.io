@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agents de contraste et relaxivité</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #pr { height: 170px; }
+  #ps { height: 170px; }
+  #im { height: 300px; }
+  .story {
+    margin-top: 10px; padding: 9px 12px; border-radius: 10px;
+    background: var(--wash); border: 1px solid var(--border);
+    font-size: 13.5px; line-height: 1.5; color: var(--ink); min-height: 64px;
+  }
+  .story .step { display: inline-block; font-size: 11.5px; font-weight: 650; letter-spacing: .02em;
+    color: var(--accent); text-transform: uppercase; margin-right: 6px; }
+</style>
+</head>
+<body>
+<div class="controls" id="ctl"></div>
+<div class="grid2">
+  <div class="card">
+    <h4>Taux de relaxation de la lésion : droites de pente r₁, r₂</h4>
+    <div class="plot" id="pr"></div>
+    <h4 style="margin-top:6px">Signal de la lésion pour la séquence choisie</h4>
+    <div class="plot" id="ps"></div>
+  </div>
+  <div class="card">
+    <h4>Avant / après injection (même fenêtrage)</h4>
+    <div class="plot" id="im"></div>
+    <div class="readout" id="ro"></div>
+  </div>
+</div>
+<div class="story" id="story"></div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script src="data/cerveau.js"></script>
+<script>
+(function () {
+  const P = { agent: "gadobutrol", C: 0.3, seq: "T1" };
+  const SEQ = { T1: { TR: 500, TE: 15, nom: "T1w — ES 500/15 ms" }, T2: { TR: 4000, TE: 100, nom: "T2w — ES 4000/100 ms" } };
+  const CMAX = 2;
+  const CLIN = [0.1, 0.5];          // mM, ordre de grandeur dans un tissu rehaussé après une dose standard
+  const sAg = UI.seg("#ctl", { label: "Agent", value: P.agent, options: Object.entries(MRI.AGENTS).map(([k, a]) => [k, a.nom]), onChange: (v) => { P.agent = v; redraw(); } });
+  const sC = UI.slider("#ctl", { label: "Concentration dans la lésion [C]", min: 0, max: CMAX, step: 0.01, value: P.C, unit: "mM", fmt: (v) => UI.fmt(v, 2), onInput: (v) => { P.C = v; redraw(); } });
+  const sSeq = UI.seg("#ctl", { label: "Séquence", value: P.seq, options: [["T1", "pondérée T1"], ["T2", "pondérée T2"]], onChange: (v) => { P.seq = v; redraw(); } });
+
+  const L0 = MRI.T.les;
+  const ag = () => MRI.AGENTS[P.agent];
+  const les = (C) => MRI.withAgent(L0, C, ag());
+  const sig = (C) => { const q = SEQ[P.seq]; return MRI.se(les(C), q.TR, q.TE); };
+  // concentration qui donne le signal maximal (0 si le signal ne fait que baisser)
+  function cMax() {
+    let best = 0, sb = sig(0);
+    for (let c = 0.005; c <= CMAX; c += 0.005) { const s = sig(c); if (s > sb) { sb = s; best = c; } }
+    return best;
+  }
+
+  // centre et rayon de la lésion dans l'image (en voxels), pour l'entourer
+  const F = MRI.cerveau();
+  const LES = (function () {
+    let n = 0, sx = 0, sy = 0;
+    for (let y = 0; y < F.h; y++) for (let x = 0; x < F.w; x++) { const f = F.f.les[y * F.w + x]; if (f > 0.5) { n++; sx += x; sy += y; } }
+    return { x: sx / n + 0.5, y: sy / n + 0.5, r: Math.sqrt(n / Math.PI) };
+  })();
+
+  // bande des concentrations cliniques
+  function bande(p) {
+    p.area([CLIN[0], CLIN[1]], [p.y.min, p.y.min], [p.y.max, p.y.max], UI.css("--accent"), 0.08);
+    p.label(CLIN[1], p.y.max, "doses cliniques", { dx: 4, dy: 9, color: UI.css("--muted"), size: 10.5 });
+  }
+
+  // ------------------------------------------------------------ R1, R2 vs C
+  const cr = UI.canvas("#pr", (ctx, w, h) => {
+    const rmax = 1000 / L0.T2 + ag().r2 * CMAX;
+    pr.y = { min: 0, max: rmax * 1.05, label: "R (s⁻¹)" };
+    pr.frame(ctx, w, h);
+    bande(pr);
+    const s = series();
+    s.forEach((x) => pr.func(x.f, { color: x.color, width: 2.2 }));
+    pr.endLabels(s, CMAX);
+    pr.vline(P.C, { color: UI.css("--ink"), width: 1.2 });
+    s.forEach((x) => pr.dot(P.C, x.f(P.C), { color: x.color }));
+    pr.drawHover();
+  });
+  const pr = new UI.Plot(cr, { x: { min: 0, max: CMAX, label: "[C] (mM)" }, y: { min: 0, max: 10 }, pad: { l: 46, r: 64, t: 8, b: 34 } });
+  const series = () => [
+    { name: "R₁ = 1/T₁", color: UI.css("--t-sb"), f: (c) => 1000 / les(c).T1 },
+    { name: "R₂ = 1/T₂", color: UI.css("--t-lcr"), f: (c) => 1000 / les(c).T2 },
+  ];
+  pr.hoverable(cr, series, { xName: "[C] (mM)", y: (v) => UI.fmt(v, 1) + " s⁻¹" });
+
+  // ----------------------------------------------------------- signal vs C
+  const cs = UI.canvas("#ps", (ctx, w, h) => {
+    let m = 0; for (let c = 0; c <= CMAX; c += 0.02) m = Math.max(m, sig(c));
+    ps.y = { min: 0, max: Math.max(0.1, m * 1.15), label: "S / M₀" };
+    ps.frame(ctx, w, h);
+    bande(ps);
+    ps.func(sig, { color: UI.css("--t-les"), width: 2.4 });
+    ps.hline(sig(0), { color: UI.css("--muted"), dash: [4, 4], width: 1, label: "avant injection" });
+    const cm = cMax();
+    if (cm > 0.02 && cm < CMAX - 0.02) ps.vline(cm, { color: UI.css("--muted"), dash: [2, 3], width: 1, label: "max à " + UI.fmt(cm, 2) + " mM", labelDy: 50 });
+    ps.dot(P.C, sig(P.C), { color: UI.css("--t-les"), label: "×" + UI.fmt(sig(P.C) / sig(0), 2), bold: true });
+    ps.drawHover();
+  });
+  const ps = new UI.Plot(cs, { x: { min: 0, max: CMAX, label: "[C] (mM)" }, y: { min: 0, max: 1 }, pad: { l: 46, r: 64, t: 8, b: 34 } });
+  ps.hoverable(cs, () => [{ name: "lésion", color: UI.css("--t-les"), f: sig }], { xName: "[C] (mM)", y: (v) => UI.fmt(v, 3) });
+
+  // --------------------------------------------------------------- images
+  function entourer(ctx, r) {
+    const cx = r.x + LES.x / F.w * r.w, cy = r.y + LES.y / F.h * r.h, rr = (LES.r + 4) / F.w * r.w;
+    ctx.strokeStyle = UI.css("--accent"); ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.arc(cx, cy, rr, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]);
+  }
+  const ci = UI.canvas("#im", (ctx, w, h) => {
+    const q = SEQ[P.seq];
+    const a = MRI.simuler({ seq: "SE", TR: q.TR, TE: q.TE, C: 0, agent: P.agent });
+    const b = MRI.simuler({ seq: "SE", TR: q.TR, TE: q.TE, C: P.C, agent: P.agent });
+    const hi = Math.max(MRI.fenetre(a.mag), MRI.fenetre(b.mag));
+    const gw = (w - 8) / 2;
+    entourer(ctx, MRI.dessiner(ctx, a.mag, { x: 0, y: 0, w: gw, h: h - 4 }, { lo: 0, hi, label: "avant", sub: q.nom }));
+    entourer(ctx, MRI.dessiner(ctx, b.mag, { x: gw + 8, y: 0, w: gw, h: h - 4 }, { lo: 0, hi, label: "après : " + UI.fmt(P.C, 2) + " mM", sub: ag().nom }));
+  });
+
+  // ---------------------------------------------------------------- texte
+  function story() {
+    const l = les(P.C), f1 = L0.T1 / l.T1, f2 = L0.T2 / l.T2, k = sig(P.C) / sig(0);
+    const fx = (v) => UI.fmt(v, v < 10 ? 1 : 0);
+    const cm = cMax(), negatif = ag().r2 / ag().r1 > 3;
+    let step, txt;
+    if (P.C < 0.005) {
+      step = "Sans agent";
+      txt = `La lésion a T₁ = ${L0.T1} ms et T₂ = ${L0.T2} ms. Augmentez la concentration pour voir l'agent raccourcir les deux temps.`;
+    } else if (negatif && k < 1) {
+      step = "Agent négatif";
+      txt = `Le ferumoxytol a r₂ ≈ ${UI.fmt(ag().r2 / ag().r1, 0)} r₁. T₂ chute fortement (÷${fx(f2)}) et la lésion s'assombrit (×${UI.fmt(k, 2)}). C'est pour ça qu'on parle d'agent « négatif ».`;
+    } else if (negatif && P.C > cm + 0.01) {
+      step = "Trop d'agent";
+      txt = `Le ferumoxytol a r₂ ≈ ${UI.fmt(ag().r2 / ag().r1, 0)} r₁. Au-delà de ${UI.fmt(cm, 2)}&nbsp;mM, la baisse de T₂ (÷${fx(f2)}) l'emporte et le signal retombe vite (×${UI.fmt(k, 2)} par rapport à avant l'injection).`;
+    } else if (negatif) {
+      step = "Faible dose";
+      txt = `À faible dose T₁ baisse aussi beaucoup (÷${fx(f1)}) et, avec un TE court, la lésion s'éclaircit d'abord (×${UI.fmt(k, 2)}). Au-delà de ${UI.fmt(cm, 2)} mM la baisse de T₂ l'emporte.`;
+    } else if (P.seq === "T2") {
+      step = "Pondération T2";
+      txt = `Avec un TR long, raccourcir T₁ ne change presque rien. Seule compte la baisse de T₂ (÷${fx(f2)}) et la lésion s'assombrit (×${UI.fmt(k, 2)}). Le rehaussement au gadolinium se voit en T1, pas en T2.`;
+    } else if (cm > 0.02 && P.C > cm + 0.01) {
+      step = "Trop d'agent";
+      txt = `Au-delà de ${UI.fmt(cm, 2)}&nbsp;mM, M<sub>z</sub> repousse déjà presque en entier pendant TR et raccourcir T₁ ne sert plus. La baisse de T₂ (÷${fx(f2)}) l'emporte et le signal redescend, tout en restant ×${UI.fmt(k, 2)} au-dessus d'avant l'injection.`;
+    } else {
+      step = "Rehaussement";
+      txt = `Le gadolinium divise T₁ par ${fx(f1)} mais T₂ seulement par ${fx(f2)}. L'aimantation de la lésion repousse plus vite pendant TR et sort ${UI.fmt(k, 2)} fois plus brillante qu'avant l'injection.`;
+    }
+    UI.$("#story").innerHTML = `<span class="step">${step}</span>${txt}`;
+  }
+
+  function redraw() {
+    cr.redraw(); cs.redraw(); ci.redraw();
+    const l = les(P.C);
+    UI.$("#ro").innerHTML = `Lésion : T₁ ${L0.T1} → ${UI.fmt(l.T1, 0)}&nbsp;ms, T₂ ${L0.T2} → ${UI.fmt(l.T2, 0)}&nbsp;ms · r₁ = ${UI.fmt(ag().r1, 1)}, r₂ = ${UI.fmt(ag().r2, 1)} mM⁻¹s⁻¹ (3&nbsp;T)`;
+    story();
+  }
+  redraw();
+
+  // accès pour les captures (outils/captures.py)
+  window.__etat = (o) => {
+    Object.assign(P, o); sAg.set(P.agent, true); sC.set(P.C, true); sSeq.set(P.seq, true); redraw();
+  };
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Écho de gradient pas à pas</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #chrono { height: 176px; }
+  #row { height: 112px; }
+  #pphx { height: 150px; }
+  #psig { height: 250px; }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; align-items: center; }
+  .presets .lab { font-size: 12px; color: var(--ink2); margin-right: 2px; }
+  .presets .btn.on { background: var(--wash); border-color: var(--accent); }
+  .story {
+    margin-top: 10px; padding: 9px 12px; border-radius: 10px;
+    background: var(--wash); border: 1px solid var(--border);
+    font-size: 13.5px; line-height: 1.5; color: var(--ink); min-height: 64px;
+  }
+  .story .step { display: inline-block; font-size: 11.5px; font-weight: 650; letter-spacing: .02em;
+    color: var(--accent); text-transform: uppercase; margin-right: 6px; }
+  .ro { margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="presets" id="pre"><span class="lab">Parcours guidé :</span></div>
+<div class="controls" id="ctl1"></div>
+<div class="controls" id="ctl2"></div>
+<div class="card" style="margin-bottom:12px">
+  <h4>Chronogramme : ce que fait la machine</h4>
+  <div class="plot" id="chrono"></div>
+</div>
+<div class="grid2">
+  <div class="card">
+    <h4>Les spins le long de l'objet (position x)</h4>
+    <div class="plot" id="row"></div>
+    <h4 style="margin-top:4px">Phase des spins en fonction de x</h4>
+    <div class="plot" id="pphx"></div>
+  </div>
+  <div class="card">
+    <h4>Signal mesuré |S(t)|</h4>
+    <div class="plot" id="psig"></div>
+    <div class="readout ro" id="ro"></div>
+  </div>
+</div>
+<div class="story" id="story"></div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script>
+(function () {
+  const NSIG = 600, NDRAW = 11, DT = 0.02;   // spins pour le signal / affichés, pas (ms)
+  const KMAX = 4 * Math.PI;                    // pente de phase (rad par unité de x) en fin de lobe négatif
+  const T2 = 80;                               // ms, fixe (bien plus long que TE)
+  const P = { inv: true, inhom: false, T2p: 8, TE: 10, speed: 1 };
+  let D, t = 0, done = false;
+
+  function rng(seed) {
+    return function () {
+      seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+      let r = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function shuffle(a, r) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+  // ------------------------------------------------------------ gradient et pente k(t)
+  const Tp = () => P.TE / 2;                   // durée du lobe négatif
+  const tEnd = () => 1.5 * P.TE;               // fin de la lecture
+  const tmax = () => 1.65 * P.TE;
+  function G(tt) {                              // forme du gradient (−1, +1 ou 0)
+    if (tt < 0) return 0;
+    if (P.inv) return tt < Tp() ? -1 : tt < tEnd() ? 1 : 0;
+    return tt < tEnd() ? 1 : 0;
+  }
+  function kappa(tt) {                          // pente de la rampe de phase = γ ∫G
+    const a = KMAX / Tp(), te = Math.min(tt, tEnd());
+    if (!P.inv) return a * te;
+    return te < Tp() ? -a * te : -KMAX + a * (te - Tp());
+  }
+
+  function simulate() {
+    const n = Math.round(tmax() / DT);
+    const r = rng(2024);
+    const w = P.inhom ? 1000 / (2 * Math.PI * P.T2p) : 0;          // Hz, 1/T2' = 2π w
+    const xs = [], fs = shuffle(MRI.offsets(NSIG, w, "lorentz"), r);
+    for (let i = 0; i < NSIG; i++) xs.push(-1 + 2 * (i + 0.5) / NSIG);
+    const xd = [], qd = [];
+    for (let i = 0; i < NDRAW; i++) { xd.push(-1 + 2 * i / (NDRAW - 1)); qd.push(0.12 + 0.76 * i / (NDRAW - 1)); }
+    const fd = shuffle(qd.map((q) => (w > 0 ? w * Math.tan(Math.PI * (q - 0.5)) : 0)), r);
+    const sx = new Float32Array(n + 1), sy = new Float32Array(n + 1);
+    for (let k = 0; k <= n; k++) {
+      const tt = k * DT, kp = kappa(tt), e = Math.exp(-tt / T2);
+      let x = 0, y = 0;
+      for (let i = 0; i < NSIG; i++) { const ph = kp * xs[i] + 2 * Math.PI * fs[i] * tt / 1000; x += Math.cos(ph); y += Math.sin(ph); }
+      sx[k] = e * x / NSIG; sy[k] = e * y / NSIG;
+    }
+    return { n, xd, fd, sx, sy };
+  }
+  const idx = (tt) => UI.clamp(Math.round(tt / DT), 0, D.n);
+  const amp = (k) => Math.hypot(D.sx[k], D.sy[k]);
+  const T2s = () => 1 / (1 / T2 + (P.inhom ? 1 / P.T2p : 0));
+  const phaseOf = (i, tt) => kappa(tt) * D.xd[i] + 2 * Math.PI * D.fd[i] * tt / 1000;
+
+  // ------------------------------------------------------------ contrôles
+  const anim = new UI.Anim(step);
+  const cInv = UI.check("#ctl1", { label: "Lobe négatif avant la lecture", value: P.inv, onChange: (v) => { P.inv = v; rebuild(); } });
+  const cInh = UI.check("#ctl1", { label: "Champ non homogène → T₂′", value: P.inhom, onChange: (v) => { P.inhom = v; rebuild(true); } });
+  const bx = UI.el("div", { class: "row", style: "gap:6px;align-items:flex-end;flex:0 0 auto" });
+  UI.$("#ctl1").appendChild(bx);
+  UI.playButton(bx, anim);
+  UI.button(bx, "↺", () => { anim.pause(); setT(0); }, "btn");
+  UI.seg(bx, { value: 1, options: [[0.5, "×½"], [1, "×1"], [2, "×2"]], onChange: (v) => { P.speed = v; } });
+
+  const sT = UI.slider("#ctl2", { label: "Temps", min: 0, max: tmax(), step: DT, value: 0, unit: "ms", fmt: (v) => UI.fmt(v, 2),
+    onInput: (v) => { anim.pause(); t = v; done = false; redraw(); } });
+  let pending = null;
+  const later = (keep) => { clearTimeout(pending); pending = setTimeout(() => rebuild(keep), 40); };
+  UI.slider("#ctl2", { label: "TE", min: 4, max: 20, step: 0.5, value: P.TE, unit: "ms", fmt: (v) => UI.fmt(v, 1), onInput: (v) => { P.TE = v; later(false); } });
+  UI.slider("#ctl2", { label: "T₂′ (champ non homogène)", min: 3, max: 40, step: 1, value: P.T2p, unit: "ms", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.T2p = v; later(true); } });
+
+  const PRESETS = [
+    ["① Gradient de lecture seul", { inv: false, inhom: false }],
+    ["② Écho de gradient", { inv: true, inhom: false }],
+    ["③ Écho de gradient + champ non homogène", { inv: true, inhom: true }],
+  ];
+  const preBtns = PRESETS.map(([lab, o]) => UI.button("#pre", lab, () => {
+    Object.assign(P, o); cInv.set(o.inv, true); cInh.set(o.inhom, true); rebuild(); anim.play();
+  }, "btn"));
+
+  function rebuild(keepT) {
+    anim.pause(); done = false;
+    D = simulate();
+    sT.input.max = tmax();
+    t = keepT ? Math.min(t, tmax()) : 0;
+    sT.set(t, true);
+    preBtns.forEach((b, i) => { const o = PRESETS[i][1]; b.classList.toggle("on", o.inv === P.inv && o.inhom === P.inhom); });
+    redraw();
+  }
+  function setT(v) { t = v; done = false; sT.set(t, true); redraw(); }
+  function step(dt) {
+    if (done) { done = false; t = 0; }
+    if (t >= tmax() - 1e-9) { done = true; return false; }
+    t = Math.min(t + dt * P.speed * P.TE / 6, tmax());   // ~6 s réelles jusqu'à l'écho
+    sT.set(t, true); redraw();
+  }
+
+  // ------------------------------------------------------------ couleurs (position)
+  function hex2rgb(h) { h = h.replace("#", ""); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); }
+  function mix(a, b, u) { return a.map((v, i) => Math.round(v + (b[i] - v) * u)); }
+  function posColor(x) {
+    const n = hex2rgb(UI.css("--neg")), m = hex2rgb(UI.css("--mid")), p = hex2rgb(UI.css("--pos"));
+    return `rgb(${(x < 0 ? mix(m, n, -x) : mix(m, p, x)).join(",")})`;
+  }
+
+  // ------------------------------------------------------------ chronogramme
+  const cch = UI.canvas("#chrono", drawChrono);
+  function drawChrono(ctx, w, h) {
+    const L = 78, R = w - 14, X = (tt) => L + (tt / tmax()) * (R - L);
+    const ink2 = UI.css("--ink2"), axis = UI.css("--axis"), muted = UI.css("--muted"), acc = UI.css("--accent");
+    const rows = [["RF", 24], ["Gradient", 74], ["Écoute", 116], ["k ∝ ∫G", 152]];
+    rows.forEach(([lab, y]) => {
+      UI.text(ctx, lab, 6, y, { color: ink2, size: 11.5, weight: "600" });
+      ctx.strokeStyle = axis; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(L, y + 0.5); ctx.lineTo(R, y + 0.5); ctx.stroke();
+    });
+    // RF
+    ctx.strokeStyle = UI.css("--rf"); ctx.lineWidth = 1.6; ctx.beginPath();
+    for (let i = -20; i <= 20; i++) { const u = i / 20 * 3 * Math.PI, s = u === 0 ? 1 : Math.sin(u) / u; const xx = X(0) + 6 + i * 0.45, yy = 24 - 14 * s; i === -20 ? ctx.moveTo(xx, yy) : ctx.lineTo(xx, yy); }
+    ctx.stroke();
+    UI.text(ctx, "α", X(0) + 16, 12, { color: UI.css("--rf"), size: 12, weight: "600" });
+    // gradient
+    const gy = 74, gh = 18, segs = P.inv ? [[0, Tp(), -1, "lobe négatif"], [Tp(), tEnd(), 1, "lecture"]] : [[0, tEnd(), 1, "lecture"]];
+    segs.forEach(([a, b, s, lab]) => {
+      const col = s < 0 ? UI.css("--neg") : UI.css("--pos");
+      ctx.fillStyle = col; ctx.globalAlpha = 0.22; ctx.fillRect(X(a), s < 0 ? gy : gy - gh, X(b) - X(a), gh); ctx.globalAlpha = 1;
+      ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.strokeRect(X(a) + 0.5, (s < 0 ? gy : gy - gh) + 0.5, X(b) - X(a) - 1, gh - 1);
+      UI.text(ctx, lab, (X(a) + X(b)) / 2, s < 0 ? gy + gh + 9 : gy - gh - 8, { align: "center", color: col, size: 11, weight: "600" });
+    });
+    // ADC
+    ctx.fillStyle = acc; ctx.globalAlpha = 0.15; ctx.fillRect(X(Tp()), 104, X(tEnd()) - X(Tp()), 22); ctx.globalAlpha = 1;
+    ctx.strokeStyle = acc; ctx.setLineDash([4, 3]); ctx.strokeRect(X(Tp()) + 0.5, 104.5, X(tEnd()) - X(Tp()) - 1, 21); ctx.setLineDash([]);
+    // k(t)
+    const kmaxAbs = P.inv ? KMAX : 3 * KMAX, ky = 152, kh = 16;
+    ctx.strokeStyle = UI.css("--ink"); ctx.lineWidth = 1.8; ctx.beginPath();
+    for (let i = 0; i <= 200; i++) { const tt = i / 200 * tmax(), yy = ky - kh * kappa(tt) / kmaxAbs; i ? ctx.lineTo(X(tt), yy) : ctx.moveTo(X(tt), yy); }
+    ctx.stroke();
+    // TE
+    ctx.strokeStyle = muted; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(X(P.TE) + 0.5, 8); ctx.lineTo(X(P.TE) + 0.5, h - 4); ctx.stroke(); ctx.setLineDash([]);
+    UI.text(ctx, P.inv ? "TE : k = 0" : "TE", X(P.TE) + 4, 8, { color: muted, size: 11, weight: "600" });
+    // curseur temps
+    ctx.strokeStyle = acc; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(X(t) + 0.5, 4); ctx.lineTo(X(t) + 0.5, h - 2); ctx.stroke();
+    ctx.fillStyle = acc; ctx.beginPath(); ctx.arc(X(t), ky - kh * kappa(t) / kmaxAbs, 3.5, 0, 2 * Math.PI); ctx.fill();
+  }
+
+  // ------------------------------------------------------------ rangée de spins
+  const crow = UI.canvas("#row", drawRow);
+  function drawRow(ctx, w, h) {
+    const sumW = 100, L = 6, R = w - sumW - 10, cy = h / 2 - 8;
+    const r = Math.min((R - L) / NDRAW / 2 - 2, h / 2 - 16), e = Math.exp(-t / T2);
+    D.xd.forEach((x, i) => {
+      const cx = L + (i + 0.5) * (R - L) / NDRAW, ph = phaseOf(i, t);
+      ctx.strokeStyle = UI.css("--grid"); ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI); ctx.stroke();
+      UI.arrow(ctx, cx, cy, cx + r * 0.95 * e * Math.sin(ph), cy - r * 0.95 * e * Math.cos(ph), posColor(x), 2, 6);
+    });
+    UI.text(ctx, "← gauche", L, h - 8, { color: UI.css("--muted"), size: 11 });
+    UI.text(ctx, "droite →", R, h - 8, { color: UI.css("--muted"), size: 11, align: "right" });
+    // somme
+    const k = idx(t), sx = D.sx[k], sy = D.sy[k], a = Math.hypot(sx, sy), cx = w - sumW / 2, rs = Math.min(sumW / 2 - 8, h / 2 - 16);
+    ctx.strokeStyle = UI.css("--axis"); ctx.lineWidth = 1.2; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(cx, cy, rs, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]);
+    if (a > 0.01) { const ang = Math.atan2(sy, sx); UI.arrow(ctx, cx, cy, cx + rs * a * Math.sin(ang), cy - rs * a * Math.cos(ang), UI.css("--m-sum"), 3.5, 10); }
+    UI.text(ctx, "somme = signal", cx, h - 8, { align: "center", color: UI.css("--ink2"), size: 10.5, weight: "600" });
+  }
+
+  // ------------------------------------------------------------ phase vs x
+  const cpx = UI.canvas("#pphx", drawPx);
+  const ppx = new UI.Plot(cpx, { x: { min: -1, max: 1 }, y: { min: -1, max: 1 }, pad: { l: 46, r: 14, t: 8, b: 30 } });
+  function piFmt(v) { const k = Math.round(v / Math.PI); return k === 0 ? "0" : (k < 0 ? "−" : "") + (Math.abs(k) === 1 ? "" : Math.abs(k)) + "π"; }
+  function drawPx(ctx, w, h) {
+    const kmaxAbs = P.inv ? KMAX : 3 * KMAX;
+    const extra = P.inhom ? Math.max(...D.fd.map((f) => Math.abs(2 * Math.PI * f * tmax() / 1000))) : 0;
+    const hi = Math.min(kmaxAbs + extra, 16 * Math.PI) * 1.05, lo = -hi;
+    const span = (hi - lo) / Math.PI, st = Math.PI * Math.max(1, [1, 2, 4, 5, 8, 10].find((s) => span / s <= 6) || 10);
+    const ticks = []; for (let v = Math.ceil(lo / st) * st; v <= hi + 1e-9; v += st) ticks.push(v);
+    ppx.x = { min: -1.05, max: 1.05, ticks: [-1, 0, 1], fmt: (v) => (v < 0 ? "gauche" : v > 0 ? "droite" : "centre"), label: "" };
+    ppx.y = { min: lo, max: hi, ticks, fmt: piFmt };
+    ppx.frame(ctx, w, h);
+    ppx.line([-1, 1], [-kappa(t), kappa(t)], { color: UI.css("--muted"), width: 1.4, dash: [5, 4] });
+    D.xd.forEach((x, i) => ppx.dot(x, phaseOf(i, t), { color: posColor(x), r: 4 }));
+    UI.text(ctx, "pente de la rampe = k", ppx.R - 4, ppx.T + 8, { align: "right", color: UI.css("--muted"), size: 11, halo: true });
+  }
+
+  // ------------------------------------------------------------ signal
+  const csig = UI.canvas("#psig", drawSig);
+  const psig = new UI.Plot(csig, { x: { min: 0, max: 20, label: "t (ms)" }, y: { min: 0, max: 1.08, ticks: [0, 0.5, 1] }, pad: { l: 46, r: 14, t: 8, b: 34 } });
+  function drawSig(ctx, w, h) {
+    psig.x = { min: 0, max: tmax(), label: "t (ms)" };
+    psig.frame(ctx, w, h);
+    const acc = UI.css("--accent");
+    ctx.fillStyle = acc; ctx.globalAlpha = 0.08; ctx.fillRect(psig.X(Tp()), psig.T, psig.X(tEnd()) - psig.X(Tp()), psig.B - psig.T); ctx.globalAlpha = 1;
+    UI.text(ctx, "fenêtre d'écoute", (psig.X(Tp()) + psig.X(tEnd())) / 2, psig.T + 9, { align: "center", color: acc, size: 11, halo: true });
+    psig.func((x) => Math.exp(-x / T2), { color: UI.css("--muted"), width: 1.2, dash: [6, 4] });
+    if (P.inhom) psig.func((x) => Math.exp(-x / T2s()), { color: UI.css("--c-violet"), width: 1.3, dash: [1.5, 3] });
+    psig.vline(P.TE, { color: UI.css("--muted"), dash: [4, 4], width: 1, label: "TE", labelDy: 14 });
+    const k = idx(t), xs = [], ys = [];
+    for (let j = 0; j <= k; j++) { xs.push(j * DT); ys.push(amp(j)); }
+    psig.line(xs, ys, { color: UI.css("--m-sum"), width: 2.2 });
+    psig.dot(k * DT, amp(k), { color: UI.css("--m-sum"), r: 4 });
+    psig.label(tmax() * 0.99, Math.exp(-tmax() * 0.99 / T2), "exp(−t/T₂)", { align: "right", dy: -9, color: UI.css("--ink2") });
+    if (P.inhom) psig.label(Math.min(tmax() * 0.7, 1.2 * T2s()), Math.exp(-Math.min(tmax() * 0.7, 1.2 * T2s()) / T2s()), "exp(−t/T₂*)", { dx: 5, dy: -9, color: UI.css("--c-violet") });
+  }
+
+  // ------------------------------------------------------------ récit
+  function story() {
+    const te = P.TE, eps = 0.04 * te, f2 = (x) => UI.fmt(x, 2);
+    let tag, txt;
+    if (!P.inv) {
+      if (t < Tp()) { tag = "Gradient allumé"; txt = "Le gradient de lecture est allumé tout de suite. Le champ est plus fort à droite, donc les spins de droite tournent plus vite. Leur phase forme une rampe le long de x et le signal s'effondre en quelques millisecondes."; }
+      else if (t <= tEnd()) { tag = "On écoute… rien"; txt = "La fenêtre d'écoute est ouverte, mais les spins ne font que s'éventailler davantage. Rien ne les ramène ensemble : pas d'écho, presque rien à mesurer. Il manque le lobe négatif."; }
+      else { tag = "Fin de la lecture"; txt = "Le gradient est coupé et la rampe de phase ne bouge plus. On n'a mesuré que du bruit."; }
+    } else if (t < Tp()) {
+      tag = "Lobe négatif";
+      txt = "Le gradient est négatif : le champ est plus faible à droite. Les spins de droite prennent du retard, ceux de gauche de l'avance. La phase forme une rampe le long de x (sa pente est k) et le signal s'effondre. Ce déphasage-là, c'est nous qui l'avons créé, donc on sait le défaire.";
+    } else if (t < te - eps) {
+      tag = "Gradient inversé";
+      txt = "On inverse le gradient et on commence à écouter. Les spins de droite vont maintenant plus vite et rattrapent leur retard. La rampe se redresse, k remonte vers 0 et le signal remonte.";
+    } else if (t <= te + eps) {
+      tag = "Écho de gradient";
+      txt = `À TE = ${UI.fmt(te, 1)} ms l'aire du lobe positif compense exactement celle du lobe négatif. La rampe est à plat et tous les spins sont réalignés. C'est le centre de l'espace des k (k = 0).`;
+      if (P.inhom) txt += ` Mais les écarts dus au champ non homogène ne dépendent pas du gradient, ils n'ont donc pas été corrigés. Le pic ne vaut que e<sup>−TE/T₂*</sup> = ${f2(Math.exp(-te / T2s()))} au lieu de e<sup>−TE/T₂</sup> = ${f2(Math.exp(-te / T2))}.`;
+    } else if (t <= tEnd()) {
+      tag = "Après l'écho";
+      txt = "La rampe repart dans l'autre sens et le signal redescend. Pendant toute la fenêtre d'écoute on a parcouru une ligne de l'espace des k, de −k<sub>max</sub> à +k<sub>max</sub>. Le signal enregistré est la transformée de Fourier de l'objet le long de x.";
+    } else {
+      tag = "Fin de la lecture";
+      txt = "Le gradient est coupé et la rampe de phase ne bouge plus. Pour l'image suivante on recommence avec un autre codage de phase.";
+    }
+    UI.$("#story").innerHTML = `<span class="step">${tag}</span>${txt}`;
+  }
+  function readout() {
+    const k = idx(t), parts = [`k = ${UI.fmt(kappa(t) / KMAX, 2)} k<sub>max</sub>`, `signal = ${UI.fmt(amp(k), 2)}`];
+    if (P.inhom) parts.push(`T₂′ = ${UI.fmt(P.T2p, 0)} ms · T₂* = ${UI.fmt(T2s(), 1)} ms`);
+    else parts.push(`T₂ = ${T2} ms (aucune inhomogénéité)`);
+    UI.$("#ro").innerHTML = parts.join(" · ");
+  }
+
+  function redraw() { cch.redraw(); crow.redraw(); cpx.redraw(); csig.redraw(); story(); readout(); }
+  rebuild();
+  window.__etat = (o, tt) => { Object.assign(P, o); cInv.set(P.inv, true); cInh.set(P.inhom, true); rebuild(); setT(tt); };
+})();
+</script>
+</body>
+</html>

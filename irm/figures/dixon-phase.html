@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dixon avec la phase : un voxel puis un abdomen simulé</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #pv { height: 250px; }
+  #pc { height: 230px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h4>Un voxel, étape par étape</h4>
+  <div class="controls" id="ctlv"></div>
+  <div class="plot" id="pv"></div>
+  <div class="readout" id="rov"></div>
+</div>
+<div class="card" style="margin-top:12px">
+  <h4>Sur une coupe d'abdomen simulée</h4>
+  <div class="controls" id="ctlc"></div>
+  <div class="plot" id="pc"></div>
+  <div class="readout" id="roc"></div>
+</div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script src="lib/abdomen.js"></script>
+<script>
+(function () {
+  const A = ABDO, N = A.w * A.h;
+  const fHz = MRI.fatHz(A.B0);                        // ≈ −434 Hz à 3 T
+  const TIP = 1000 / Math.abs(fHz), TOP = TIP / 2;    // ms
+  const DTE = (TIP - TOP) / 1000;                     // ΔTE = TE_IP − TE_OP (s)
+  const SEUIL = 1 / (4 * DTE);                        // 1/(4 ΔTE) ≈ 217 Hz
+  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  const P = { ff: 0.7, dfv: 80, phi0: 50, off: 120, choix: "simple" };
+
+  // ================================================================ un voxel
+  const sFF = UI.slider("#ctlv", { label: "Fraction de graisse du voxel", min: 0, max: 1, step: 0.01, value: P.ff, fmt: (v) => UI.fmt(100 * v, 0) + " %", onInput: (v) => { P.ff = v; drawV(); } });
+  const sDF = UI.slider("#ctlv", { label: "Champ dans le voxel Δf<sub>B₀</sub>", min: -450, max: 450, step: 5, value: P.dfv, unit: "Hz", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.dfv = v; drawV(); } });
+  const sP0 = UI.slider("#ctlv", { label: "Phase des antennes φ₀", min: -180, max: 180, step: 5, value: P.phi0, unit: "°", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.phi0 = v; drawV(); } });
+
+  // Toutes les grandeurs complexes du voxel (W + F = 1)
+  function voxel() {
+    const W = 1 - P.ff, F = P.ff, d = W - F, p0 = P.phi0 * UI.DEG;
+    const pIP = p0 + 2 * Math.PI * P.dfv * TIP / 1000, pOP = p0 + 2 * Math.PI * P.dfv * TOP / 1000;
+    const IP = [Math.cos(pIP), Math.sin(pIP)], OP = [d * Math.cos(pOP), d * Math.sin(pOP)];
+    const th = 2 * Math.PI * P.dfv * DTE;                         // θ vrai
+    const Z = [d * Math.cos(-th), d * Math.sin(-th)];               // OP·e^(−i arg IP)
+    const Z2 = [Z[0] * Z[0] - Z[1] * Z[1], 2 * Z[0] * Z[1]];
+    const nul = Math.abs(d) < 1e-9;
+    const the = nul ? 0 : -Math.atan2(Z2[1], Z2[0]) / 2;            // θ estimé, dans ]−90°, 90°]
+    const s = Z[0] * Math.cos(the) - Z[1] * Math.sin(the);          // Re(Z·e^(iθ estimé))
+    return { W, F, d, IP, OP, Z, Z2, th, the, s, nul };
+  }
+
+  function repere(ctx, cx, cy, R) {
+    ctx.strokeStyle = UI.css("--grid"); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2 * Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - R - 8, cy); ctx.lineTo(cx + R + 8, cy); ctx.moveTo(cx, cy - R - 8); ctx.lineTo(cx, cy + R + 8); ctx.stroke();
+    UI.text(ctx, "Re", cx + R + 8, cy - 8, { align: "right", color: UI.css("--muted"), size: 10 });
+    UI.text(ctx, "Im", cx + 4, cy - R - 6, { color: UI.css("--muted"), size: 10 });
+  }
+  // flèche du centre vers le nombre complexe v ; étiquette au-delà de la pointe
+  function vecteur(ctx, cx, cy, R, v, col, lab, w = 2.6) {
+    const x = cx + v[0] * R, y = cy - v[1] * R, n = Math.hypot(v[0], v[1]);
+    if (n * R > 2) UI.arrow(ctx, cx, cy, x, y, col, w, 9);
+    if (lab) {
+      const a = n * R > 2 ? Math.atan2(v[1], v[0]) : Math.PI / 2, rr = Math.max(n * R, 6) + 13;   // vecteur nul : étiquette au-dessus
+      UI.text(ctx, lab, cx + Math.cos(a) * rr, cy - Math.sin(a) * rr, { align: "center", color: col, size: 12, weight: "600", halo: true });
+    }
+  }
+  // droite pointillée passant par l'origine, d'angle a (les deux sens)
+  function axe(ctx, cx, cy, R, a, col) {
+    ctx.strokeStyle = col; ctx.lineWidth = 1.3; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(cx - Math.cos(a) * R * 1.12, cy + Math.sin(a) * R * 1.12); ctx.lineTo(cx + Math.cos(a) * R * 1.12, cy - Math.sin(a) * R * 1.12); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  const cv = UI.canvas("#pv", (ctx, w, h) => {
+    const v = voxel(), cw = w / 4, R = Math.min(cw * 0.33, (h - 70) / 2), cy = 26 + R + 8;
+    const eau = UI.tcolor("lcr"), gr = UI.tcolor("gr"), vio = UI.css("--c-violet"), gris = UI.css("--ink2");
+    const titres = ["1. Images mesurées", "2. Phase commune retirée", "3. Z² : le signe disparaît", "4. Champ retiré"];
+    const sous = [["IP et OP portent φ₀", "et la phase du champ"], ["Z = OP·e^(−i·arg IP)", "= (W − F)·e^(−iθ)"], ["arg Z² = −2θ :", "θ connu à 180° près"], ["Re(Z·e^(iθ estimé))", "= W − F, avec son signe"]];
+    for (let k = 0; k < 4; k++) {
+      const cx = cw * k + cw / 2;
+      UI.text(ctx, titres[k], cx, 10, { align: "center", color: UI.css("--ink"), size: 12.5, weight: "600" });
+      UI.text(ctx, sous[k][0], cx, cy + R + 22, { align: "center", color: gris, size: 11 });
+      UI.text(ctx, sous[k][1], cx, cy + R + 37, { align: "center", color: gris, size: 11 });
+      repere(ctx, cx, cy, R);
+      if (k === 0) {
+        vecteur(ctx, cx, cy, R, v.IP, gris, "IP");
+        vecteur(ctx, cx, cy, R, v.OP, vio, "OP");
+      } else if (k === 1) {
+        vecteur(ctx, cx, cy, R, [1, 0], UI.css("--muted"), "", 1.4);
+        axe(ctx, cx, cy, R, -v.th, UI.css("--muted"));
+        vecteur(ctx, cx, cy, R, v.Z, vio, v.nul ? "" : "Z");
+      } else if (k === 2) {
+        if (!v.nul) axe(ctx, cx, cy, R, -v.the, UI.css("--c-rouge"));
+        vecteur(ctx, cx, cy, R, v.Z2, UI.css("--c-rouge"), v.nul ? "" : "Z²");
+      } else {
+        // résultat signé sur l'axe réel, coloré eau (positif) ou graisse (négatif)
+        const col = v.s >= 0 ? eau : gr;
+        vecteur(ctx, cx, cy, R, [v.s, 0], col, "");
+        // repère de la vraie valeur W − F
+        const xv = cx + v.d * R;
+        ctx.strokeStyle = UI.css("--ink"); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(xv, cy - 7); ctx.lineTo(xv, cy + 7); ctx.stroke();
+        UI.text(ctx, "vrai", xv, cy + 16, { align: "center", color: UI.css("--ink"), size: 10.5, halo: true });
+        const juste = v.nul || v.s * v.d > 0;
+        UI.text(ctx, v.nul ? "W = F : aucune information" : (v.s >= 0 ? "eau majoritaire" : "graisse majoritaire"), cx, cy - R * 0.55, { align: "center", color: v.nul ? gris : col, size: 12, weight: "600", halo: true });
+        if (!juste) UI.text(ctx, "signe faux", cx, cy - R * 0.55 - 16, { align: "center", color: UI.css("--c-rouge"), size: 12, weight: "600", halo: true });
+      }
+    }
+  });
+
+  function drawV() {
+    cv.redraw();
+    const v = voxel(), pc = (x) => UI.fmt(100 * x, 0) + "&nbsp;%";
+    const Wp = (1 + v.s) / 2, Fp = (1 - v.s) / 2, Wm = (1 + Math.abs(v.d)) / 2, Fm = (1 - Math.abs(v.d)) / 2;
+    let txt = `Vrai : eau ${pc(v.W)}, graisse ${pc(v.F)}. Avec la phase : eau ${pc(Wp)}, graisse ${pc(Fp)}. En magnitude seule : eau ${pc(Wm)}, graisse ${pc(Fm)}. `;
+    if (v.nul) txt += "Quand W = F, OP est nul. Il ne porte ni signe ni information sur le champ.";
+    else if (Math.abs(P.dfv) <= SEUIL) txt += `|Δf<sub>B₀</sub>| = ${UI.fmt(Math.abs(P.dfv), 0)}&nbsp;Hz reste sous 1/(4ΔTE) = ${UI.fmt(SEUIL, 0)}&nbsp;Hz. θ est entre −90° et 90° et l'estimation la plus simple de θ est la bonne.`;
+    else txt += `|Δf<sub>B₀</sub>| = ${UI.fmt(Math.abs(P.dfv), 0)}&nbsp;Hz dépasse 1/(4ΔTE) = ${UI.fmt(SEUIL, 0)}&nbsp;Hz. θ sort de l'intervalle ]−90°, 90°] et l'estimation la plus simple se trompe de 180° : le signe s'inverse et l'eau et la graisse sont échangées. Seuls les voisins permettent de trancher (cadre du bas).`;
+    UI.$("#rov").innerHTML = txt;
+  }
+
+  // ============================================================ l'abdomen
+  const sOFF = UI.slider("#ctlc", { label: "Décalage de tout le champ", min: 0, max: 200, step: 5, value: P.off, unit: "Hz", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.off = v; drawC(); } });
+  const segC = UI.seg("#ctlc", { label: "Choix entre θ et θ + 180°", value: P.choix, options: [["simple", "le plus simple (|θ| < 90°)"], ["voisins", "en suivant les voisins"]], onChange: (v) => { P.choix = v; drawC(); } });
+
+  // Images IP et OP simulées une fois ; Z0 = OP·conj(IP)/|IP| sans décalage de champ
+  const ip = A.simuler(TIP), op = A.simuler(TOP);
+  const Z0r = new Float32Array(N), Z0i = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    const m = ip.mag[i] || 1e-9;
+    Z0r[i] = (op.re[i] * ip.re[i] + op.im[i] * ip.im[i]) / m;
+    Z0i[i] = (op.im[i] * ip.re[i] - op.re[i] * ip.im[i]) / m;
+  }
+  const HI = MRI.fenetre(ip.mag);
+  let CX = 0, CY = 0, nc = 0;                          // centre du corps
+  for (let i = 0; i < N; i++) if (A.masque[i] > 0.5) { CX += i % A.w; CY += (i / A.w) | 0; nc++; }
+  CX /= nc; CY /= nc;
+
+  function boxBlur(a, r) {
+    const w = A.w, h = A.h, tmp = new Float32Array(N), out = new Float32Array(N);
+    for (let y = 0; y < h; y++) { let s = 0; for (let x = -r; x <= r; x++) s += a[y * w + UI.clamp(x, 0, w - 1)]; for (let x = 0; x < w; x++) { tmp[y * w + x] = s / (2 * r + 1); s += a[y * w + UI.clamp(x + r + 1, 0, w - 1)] - a[y * w + UI.clamp(x - r, 0, w - 1)]; } }
+    for (let x = 0; x < w; x++) { let s = 0; for (let y = -r; y <= r; y++) s += tmp[UI.clamp(y, 0, h - 1) * w + x]; for (let y = 0; y < h; y++) { out[y * w + x] = s / (2 * r + 1); s += tmp[UI.clamp(y + r + 1, 0, h - 1) * w + x] - tmp[UI.clamp(y - r, 0, h - 1) * w + x]; } }
+    return out;
+  }
+
+  // Croissance de région guidée par la qualité : on part du voxel le plus fiable et, de
+  // proche en proche, chaque voxel prend la solution θp + kπ la plus proche de son voisin.
+  function suivreVoisins(thp, q, qmin) {
+    const w = A.w, h = A.h, th = Float32Array.from(thp), fait = new Uint8Array(N);
+    // Première graine : le voxel fiable le plus proche du centre du corps, là où le champ est
+    // le mieux réglé et où la solution la plus simple est juste. Les autres régions isolées
+    // éventuelles partent ensuite de leur voxel le plus fiable.
+    let c0 = -1, dmin = Infinity;
+    for (let i = 0; i < N; i++) if (q[i] >= qmin) { const d = Math.hypot(i % w - CX, ((i / w) | 0) - CY); if (d < dmin) { dmin = d; c0 = i; } }
+    const ordre = [c0].concat(Array.from({ length: N }, (_, i) => i).sort((a, b) => q[b] - q[a]));
+    const hp = [], hq = [], href = [];                      // tas max : indice, priorité, θ du voisin
+    const push = (i, p, r) => { hp.push(i); hq.push(p); href.push(r); let k = hp.length - 1; while (k > 0) { const m = (k - 1) >> 1; if (hq[m] >= hq[k]) break; [hp[m], hp[k]] = [hp[k], hp[m]]; [hq[m], hq[k]] = [hq[k], hq[m]]; [href[m], href[k]] = [href[k], href[m]]; k = m; } };
+    const pop = () => { const top = [hp[0], href[0]]; const li = hp.pop(), lq = hq.pop(), lr = href.pop(); if (hp.length) { hp[0] = li; hq[0] = lq; href[0] = lr; let k = 0; for (;;) { const a = 2 * k + 1, b = a + 1; let m = k; if (a < hp.length && hq[a] > hq[m]) m = a; if (b < hp.length && hq[b] > hq[m]) m = b; if (m === k) break; [hp[m], hp[k]] = [hp[k], hp[m]]; [hq[m], hq[k]] = [hq[k], hq[m]]; [href[m], href[k]] = [href[k], href[m]]; k = m; } } return top; };
+    const voisins = (i, r) => { const x = i % w, y = (i / w) | 0; if (x > 0) push(i - 1, q[i - 1], r); if (x < w - 1) push(i + 1, q[i + 1], r); if (y > 0) push(i - w, q[i - w], r); if (y < h - 1) push(i + w, q[i + w], r); };
+    for (const s of ordre) {
+      if (s < 0 || fait[s] || q[s] < qmin) continue;
+      fait[s] = 1; voisins(s, th[s]);                        // graine : solution la plus simple
+      while (hp.length) {
+        const [i, ref] = pop();
+        if (fait[i] || q[i] < qmin) continue;
+        th[i] = thp[i] + Math.PI * Math.round((ref - thp[i]) / Math.PI);
+        fait[i] = 1; voisins(i, th[i]);
+      }
+    }
+    return th;
+  }
+
+  let RES = null;
+  function calculer() {
+    const a = -2 * Math.PI * P.off * DTE, ca = Math.cos(a), sa = Math.sin(a);
+    const Zr = new Float32Array(N), Zi = new Float32Array(N), Z2r = new Float32Array(N), Z2i = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      Zr[i] = Z0r[i] * ca - Z0i[i] * sa; Zi[i] = Z0r[i] * sa + Z0i[i] * ca;
+      Z2r[i] = Zr[i] * Zr[i] - Zi[i] * Zi[i]; Z2i[i] = 2 * Zr[i] * Zi[i];
+    }
+    // Z² lissé : le champ varie lentement, la moyenne locale réduit le bruit
+    const sr = boxBlur(Z2r, 1), si = boxBlur(Z2i, 1), q = new Float32Array(N), thp = new Float32Array(N);
+    for (let i = 0; i < N; i++) { thp[i] = -Math.atan2(si[i], sr[i]) / 2; q[i] = Math.hypot(sr[i], si[i]); }
+    const th = P.choix === "simple" ? thp : suivreVoisins(thp, q, 0.002 * HI * HI);
+    const fEst = new Float32Array(N), fVrai = new Float32Array(N), W = new Float32Array(N), Fa = new Float32Array(N), ff = new Float32Array(N);
+    let nTete = 0, nHaut = 0, nEch = 0, fmin = 1e9, fmax = -1e9;
+    for (let i = 0; i < N; i++) {
+      const s = Zr[i] * Math.cos(th[i]) - Zi[i] * Math.sin(th[i]);
+      W[i] = (ip.mag[i] + s) / 2; Fa[i] = (ip.mag[i] - s) / 2; ff[i] = Fa[i] / Math.max(ip.mag[i], 1e-6);
+      fEst[i] = th[i] / (2 * Math.PI * DTE);
+      fVrai[i] = A.df[i] + P.off;
+      if (A.masque[i] > 0.5) {
+        nTete++; fmin = Math.min(fmin, fVrai[i]); fmax = Math.max(fmax, fVrai[i]);
+        if (Math.abs(fVrai[i]) > SEUIL) nHaut++;
+        const tv = 2 * Math.PI * fVrai[i] * DTE, sv = Zr[i] * Math.cos(tv) - Zi[i] * Math.sin(tv);
+        if (Math.abs(sv) > 0.1 * HI && s * sv < 0) nEch++;
+      }
+    }
+    RES = { fEst, fVrai, W, F: Fa, ff, pHaut: nHaut / nTete, pEch: nEch / nTete, fmin, fmax };
+  }
+
+  const cc = UI.canvas("#pc", (ctx, w, h) => {
+    if (!RES) return;
+    const gw = (w - 18) / 4, rh = Math.min(h, gw * A.h / A.w + 34), y0 = (h - rh) / 2;
+    const R = (i) => ({ x: i * (gw + 6), y: y0, w: gw, h: rh });
+    const L = 300, ch = { lo: -L, hi: L, cmap: "div", mask: A.masque };
+    A.dessiner(ctx, RES.fVrai, R(0), Object.assign({ label: "Champ réel", sub: "de −300 (bleu) à +300 Hz (rouge)" }, ch));
+    A.dessiner(ctx, RES.fEst, R(1), Object.assign({ label: "Champ estimé", sub: "θ/(2π ΔTE)" }, ch));
+    A.dessiner(ctx, RES.W, R(2), { lo: 0, hi: HI, label: "Eau estimée", sub: "(|IP| + W − F)/2" });
+    A.dessiner(ctx, RES.F, R(3), { lo: 0, hi: HI, label: "Graisse estimée", sub: "(|IP| − (W − F))/2" });
+  });
+
+  function drawC() {
+    calculer(); cc.redraw();
+    const pc = (x) => (x > 0 && x < 0.005 ? "moins de 1" : UI.fmt(100 * x, 0)) + "&nbsp;%";
+    const T = A.TISSUS, f = (t) => `${T[t].nom} ${pc(T[t].ff)}, estimée ${pc(A.moyenne(RES.ff, t))}`;
+    let txt = `Champ réel de ${UI.fmt(RES.fmin, 0)} à ${UI.fmt(RES.fmax, 0)}&nbsp;Hz, plus fort autour de l'air de l'estomac. ${pc(RES.pHaut)} du corps dépasse 1/(4ΔTE) = ${UI.fmt(SEUIL, 0)}&nbsp;Hz. `;
+    txt += P.choix === "simple"
+      ? `Avec le choix le plus simple, le champ estimé ne peut pas dépasser ${UI.fmt(SEUIL, 0)}&nbsp;Hz : il se replie là où le vrai champ est plus fort, et l'eau et la graisse y sont échangées (${pc(RES.pEch)} du corps). `
+      : `En suivant les voisins, le champ estimé reste continu et dépasse ${UI.fmt(SEUIL, 0)}&nbsp;Hz sans se replier. Voxels échangés : ${pc(RES.pEch)} du corps. `;
+    txt += `Fractions de graisse : ${f("foie")} ; ${f("sc")}.`;
+    UI.$("#roc").innerHTML = txt;
+  }
+
+  drawV(); drawC();
+  window.__set = (o) => { Object.assign(P, o); sFF.set(P.ff, true); sDF.set(P.dfv, true); sP0.set(P.phi0, true); sOFF.set(P.off, true); segC.set(P.choix, true); drawV(); drawC(); };
+})();
+</script>
+</body>
+</html>

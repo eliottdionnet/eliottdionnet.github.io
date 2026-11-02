@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Écho de spin — simulateur de Bloch</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #v3d { height: 318px; }
+  #pph { height: 150px; }
+  #psig { height: 176px; }
+  .ro { margin-top: 4px; }
+  .btn.on { background: var(--wash); border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="controls" id="ctl1"></div>
+<div class="controls" id="ctl2"></div>
+<div class="grid2">
+  <div class="card">
+    <h4>Isochromats d'un voxel (référentiel tournant)</h4>
+    <div class="plot" id="v3d"></div>
+    <div class="legend" id="leg3d"></div>
+    <div class="readout ro" id="ro"></div>
+  </div>
+  <div class="card">
+    <h4>Phase accumulée φ(t) par chaque isochromat</h4>
+    <div class="plot" id="pph"></div>
+    <h4 style="margin-top:6px">Signal du voxel |M<sub>xy</sub>(t)|</h4>
+    <div class="plot" id="psig"></div>
+  </div>
+</div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script>
+(function () {
+  const T1 = 1000;                 // ms (fixe : on s'intéresse au plan transverse)
+  const NSIG = 1201, NDRAW = 13;    // isochromats pour le signal / affichés
+  const RF_DUR = 0.9;              // s d'animation réelle par impulsion RF
+  const NECH = 8;                  // échos du mode « Train d'échos »
+  const P = { mode: "SE", TE: 40, width: 10, T2: 100, axis: "y", angle: 180, fluct: false, speed: 1, cmp: false };
+  let S;                           // état de la simulation
+
+  // ------------------------------------------------------------ contrôles
+  const modeS = UI.seg("#ctl1", { label: "Séquence", value: P.mode, options: [["GRE", "Sans 180°"], ["SE", "Écho de spin"], ["CPMG", "Train d'échos"]],
+    onChange: (v) => { P.mode = v; reset(); } });
+  const teS = UI.slider("#ctl1", { label: "TE", min: 10, max: 80, step: 1, value: P.TE, unit: "ms", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.TE = v; reset(); } });
+  const bx = UI.el("div", { class: "row", style: "gap:6px;align-items:flex-end;flex:0 0 auto" });
+  UI.$("#ctl1").appendChild(bx);
+  const anim = new UI.Anim(step);
+  UI.playButton(bx, anim);
+  UI.button(bx, "↺", () => { reset(); }, "btn");
+  UI.seg(bx, { value: 1, options: [[0.5, "×½"], [1, "×1"], [2, "×2"]], onChange: (v) => { P.speed = v; } });
+
+  UI.slider("#ctl2", { label: "Inhomogénéité Δf", min: 0, max: 30, step: 0.5, value: P.width, unit: "Hz", fmt: (v) => UI.fmt(v, 1), onInput: (v) => { P.width = v; reset(); } });
+  UI.slider("#ctl2", { label: "T₂ (microscopique)", min: 30, max: 300, step: 5, value: P.T2, unit: "ms", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.T2 = v; reset(); } });
+  const axisS = UI.seg("#ctl2", { label: "Axe des 180°", value: P.axis, options: [["y", "y (CPMG)"], ["x", "x (CP)"]], onChange: (v) => { P.axis = v; reset(); } });
+  const angS = UI.slider("#ctl2", { label: "Angle de refocalisation", min: 90, max: 180, step: 5, value: P.angle, unit: "°", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.angle = v; reset(); } });
+  const fluctC = UI.check("#ctl2", { label: "T₂ par champs fluctuants", value: false, onChange: (v) => { P.fluct = v; reset(); } });
+  // Essai guidé : 180° ratés, échos rapprochés, les deux trains superposés
+  const bCmp = UI.button("#ctl2", "Comparer CP et CPMG", () => {
+    P.cmp = !P.cmp;
+    if (P.cmp) {
+      P.mode = "CPMG"; P.TE = 20; P.angle = 150; P.fluct = false;
+      modeS.set("CPMG", true); teS.set(20, true); angS.set(150, true); fluctC.set(false, true);
+    }
+    reset();
+  }, "btn");
+
+  // --------------------------------------------------------------- physique
+  function events() {
+    const ev = [{ t: 0, a: 90, phi: 0, lab: "90° (x)", exc: true }];
+    const phi = P.axis === "y" ? Math.PI / 2 : 0, lab = `${P.angle}° (${P.axis})`;
+    if (P.mode === "SE") ev.push({ t: P.TE / 2, a: P.angle, phi, lab });
+    if (P.mode === "CPMG") for (let k = 0; k < NECH; k++) ev.push({ t: P.TE / 2 + k * P.TE, a: P.angle, phi, lab: k === 0 ? lab : "" });
+    return ev;
+  }
+  function tmax() { return P.mode === "GRE" ? 2 * P.TE : P.mode === "SE" ? 1.7 * P.TE : (NECH + 0.4) * P.TE; }
+  function reset() {
+    anim.pause();
+    const sig = MRI.offsets(NSIG, P.width, "lorentz");
+    const qs = []; for (let i = 0; i < NDRAW; i++) qs.push(0.07 + 0.86 * i / (NDRAW - 1));
+    const draw = qs.map((q) => P.width * Math.tan(Math.PI * (q - 0.5)));
+    // Paramètres des fluctuations (Ornstein-Uhlenbeck) : R2 = <ω²> τc  (régime de rétrécissement)
+    const tau = 0.5, wrms = Math.sqrt(1 / P.T2 / tau); // rad/ms, τc court devant TE/2
+    S = {
+      t: 0, ev: events(), next: 0, rf: null, tau, wrms,
+      sig: sig.map((f) => ({ f, m: [0, 0, 1], u: 0 })),
+      drw: draw.map((f) => ({ f, m: [0, 0, 1], u: 0, psi: 0, hist: [[0, 0]] })),
+      rec: [[0, 0]], done: false,
+    };
+    S.phMax = phaseRange();
+    S.cmp = P.cmp && P.mode === "CPMG" ? { y: train("y"), x: train("x") } : null;
+    bCmp.classList.toggle("on", P.cmp);
+    redraw();
+  }
+  // Amplitudes des NECH échos pour un axe donné (calcul direct, sans fluctuations)
+  function train(axis) {
+    const phi = axis === "y" ? Math.PI / 2 : 0, a = P.angle * UI.DEG;
+    const fs = MRI.offsets(NSIG, P.width, "lorentz");
+    let M = fs.map(() => MRI.rotRF([0, 0, 1], Math.PI / 2, 0));
+    const evol = (dt) => {
+      const e2 = Math.exp(-dt / P.T2), e1 = Math.exp(-dt / T1);
+      M = M.map((m, i) => { const r = MRI.rotZ(m, 2 * Math.PI * fs[i] / 1000 * dt); return [r[0] * e2, r[1] * e2, 1 + (r[2] - 1) * e1]; });
+    };
+    const out = [];
+    evol(P.TE / 2);
+    for (let k = 0; k < NECH; k++) {
+      M = M.map((m) => MRI.rotRF(m, a, phi));
+      evol(P.TE / 2);
+      let x = 0, y = 0; M.forEach((m) => { x += m[0]; y += m[1]; });
+      out.push(Math.hypot(x, y) / NSIG);
+      evol(P.TE / 2);
+    }
+    return out;
+  }
+  function phaseRange() {
+    const fm = Math.max(...S.drw.map((d) => Math.abs(d.f))) || 1;
+    const free = P.mode === "GRE" ? tmax() : P.TE / 2;
+    return Math.max(Math.PI, 2 * Math.PI * fm * free / 1000 * 1.1 + (P.fluct ? 1 : 0));
+  }
+  let seed = 7;
+  const rnd = () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let r = Math.imul(seed ^ (seed >>> 15), 1 | seed); r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r; return ((r ^ (r >>> 14)) >>> 0) / 4294967296; };   // mulberry32
+  const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
+
+  function free(dt) { // précession + relaxation pendant dt (ms)
+    const e2 = P.fluct ? 1 : Math.exp(-dt / P.T2), e1 = Math.exp(-dt / T1);
+    const adv = (s) => {
+      let w = 2 * Math.PI * s.f / 1000;           // rad/ms
+      if (P.fluct) {
+        s.u += -s.u * dt / S.tau + S.wrms * Math.sqrt(2 * dt / S.tau) * gauss();
+        w += s.u;
+      }
+      const m = MRI.rotZ(s.m, w * dt);
+      s.m = [m[0] * e2, m[1] * e2, 1 + (m[2] - 1) * e1];
+      if (s.psi != null) s.psi += w * dt;
+    };
+    S.sig.forEach(adv); S.drw.forEach(adv);
+  }
+  function rotAll(a, phi) { const f = (s) => { s.m = MRI.rotRF(s.m, a, phi); }; S.sig.forEach(f); S.drw.forEach(f); }
+  function sum() {
+    let x = 0, y = 0, z = 0;
+    S.sig.forEach((s) => { x += s.m[0]; y += s.m[1]; z += s.m[2]; });
+    return [x / NSIG, y / NSIG, z / NSIG];
+  }
+  function step(dt) {
+    if (S.done) return false;
+    if (S.rf) {                                   // impulsion en cours (temps figé)
+      const e = S.rf.e, k = Math.min(dt / RF_DUR, 1 - S.rf.p);
+      rotAll(e.a * UI.DEG * k, e.phi); S.rf.p += k;
+      if (S.rf.p >= 1 - 1e-9) {
+        if (!e.exc) {                             // réflexion de la phase (diagramme idéal)
+          const line = e.phi === 0 ? Math.PI / 2 : 0; // angle de l'axe du 180 par rapport à -y
+          S.drw.forEach((d) => { d.psi = 2 * line - d.psi; d.hist.push([S.t, d.psi]); });
+        }
+        S.rf = null;
+      }
+      redraw(); return;
+    }
+    const nextEv = S.ev[S.next];
+    if (nextEv && S.t >= nextEv.t - 1e-9) { S.rf = { e: nextEv, p: 0 }; S.next++; redraw(); return; }
+    let dts = dt * P.speed * P.TE / (P.mode === "CPMG" ? 2 : 4);   // ms simulées : ~4 s réelles jusqu'à l'écho (2 s en train)
+    const lim = (nextEv ? nextEv.t : tmax()) - S.t;
+    dts = Math.min(dts, lim);
+    let rem = dts;
+    while (rem > 1e-9) { const h = Math.min(rem, 0.1); free(h); S.t += h; rem -= h; }
+    const m = sum();
+    S.rec.push([S.t, Math.hypot(m[0], m[1])]);
+    S.drw.forEach((d) => d.hist.push([S.t, d.psi]));
+    if (S.t >= tmax() - 1e-9) S.done = true;
+    redraw();
+  }
+
+  // --------------------------------------------------------------- couleurs
+  function hex2rgb(h) { h = h.replace("#", ""); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); }
+  function mix(a, b, t) { return a.map((v, i) => Math.round(v + (b[i] - v) * t)); }
+  function divColor(f, fm) {
+    const u = UI.clamp(f / (fm || 1), -1, 1);
+    const n = hex2rgb(UI.css("--neg")), m = hex2rgb(UI.css("--mid")), p = hex2rgb(UI.css("--pos"));
+    const c = u < 0 ? mix(m, n, -u) : mix(m, p, u);
+    return `rgb(${c.join(",")})`;
+  }
+
+  // ------------------------------------------------------------------ vue 3D
+  const c3 = UI.canvas("#v3d", draw3d);
+  const view = new UI.View3D(c3, { az: -118, el: 30, zoom: 0.37 });
+  function draw3d(ctx, w, h) {
+    view.begin(ctx, w, h).axes({ b0: true });
+    const fm = Math.max(...S.drw.map((d) => Math.abs(d.f))) || 1;
+    S.drw.forEach((d) => view.vec(d.m, divColor(d.f, fm), 1.8, 7, 0.95));
+    const m = sum();
+    view.vec(m, UI.css("--m-sum"), 3.4, 11);
+    if (S.rf) { // axe du champ B1
+      const e = S.rf.e, ax = [Math.cos(e.phi) * 1.15, Math.sin(e.phi) * 1.15, 0];
+      view.vec(ax, UI.css("--rf"), 2.2, 9);
+      const p = view.P(ax); UI.text(ctx, "B₁ (" + e.lab + ")", p[0] + 6, p[1] + 12, { color: UI.css("--rf"), size: 12, weight: "600", halo: true });
+    }
+    UI.text(ctx, "t = " + UI.fmt(S.t, 1) + " ms", 10, 14, { color: UI.css("--ink"), size: 13, weight: "600" });
+  }
+  function legend() {
+    UI.$("#leg3d").innerHTML =
+      `<span><span class="sw" style="background:${UI.css("--neg")}"></span>Δf &lt; 0 (plus lent)</span>` +
+      `<span><span class="sw" style="background:${UI.css("--pos")}"></span>Δf &gt; 0 (plus rapide)</span>` +
+      `<span><span class="sw" style="background:${UI.css("--m-sum")}"></span>somme = signal du voxel</span>`;
+  }
+  UI.onTheme(legend);
+
+  // ----------------------------------------------------------- diagramme φ(t)
+  const cph = UI.canvas("#pph", drawPh);
+  const pph = new UI.Plot(cph, { x: { min: 0, max: 100, label: "" }, y: { min: -1, max: 1 }, pad: { l: 46, r: 14, t: 8, b: 18 } });
+  function piTicks(lo, hi) {
+    const m = [0.5, 1, 2, 4, 5, 10, 20, 50, 100].find((k) => (hi - lo) / (k * Math.PI) <= 7) || 200;
+    const step = m * Math.PI;
+    const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(v);
+    return out;
+  }
+  function piFmt(v) {
+    const k = Math.round(v / (Math.PI / 2));
+    if (k === 0) return "0";
+    const n = k / 2;
+    if (Number.isInteger(n)) return (n === 1 ? "" : n === -1 ? "−" : (n < 0 ? "−" : "") + Math.abs(n)) + "π";
+    return (k < 0 ? "−" : "") + (Math.abs(k) === 1 ? "" : Math.abs(k)) + "π/2";
+  }
+  function drawPh(ctx, w, h) {
+    const lo = -S.phMax, hi = S.phMax + (P.axis === "x" && P.mode !== "GRE" ? Math.PI : 0);
+    pph.x = { min: 0, max: tmax(), fmt: () => "" };
+    pph.y = { min: lo, max: hi, ticks: piTicks(lo, hi), fmt: piFmt };
+    pph.frame(ctx, w, h);
+    S.ev.forEach((e) => { if (!e.exc) pph.vline(e.t, { color: UI.css("--rf"), dash: [2, 3], width: 1 }); });
+    const fm = Math.max(...S.drw.map((d) => Math.abs(d.f))) || 1;
+    S.drw.forEach((d) => pph.line(d.hist.map((p) => p[0]), d.hist.map((p) => p[1]), { color: divColor(d.f, fm), width: 1.6 }));
+    echoTimes().forEach((t) => pph.vline(t, { color: UI.css("--muted"), dash: [4, 4], width: 1 }));
+    if (P.angle !== 180 && P.mode !== "GRE") UI.text(ctx, "diagramme idéal (réflexion de phase)", pph.R - 4, pph.B - 8, { align: "right", size: 11, color: UI.css("--muted"), halo: true });
+  }
+
+  // -------------------------------------------------------------- signal
+  const csig = UI.canvas("#psig", drawSig);
+  const psig = new UI.Plot(csig, { x: { min: 0, max: 100, label: "t (ms)" }, y: { min: 0, max: 1.15, ticks: [0, 0.5, 1] }, pad: { l: 46, r: 14, t: 8, b: 34 } });
+  function echoTimes() {
+    if (P.mode === "SE") return [P.TE];
+    if (P.mode === "CPMG") return Array.from({ length: NECH }, (_, k) => (k + 1) * P.TE);
+    return [P.TE];
+  }
+  function drawSig(ctx, w, h) {
+    psig.x = { min: 0, max: tmax(), label: "t (ms)" };
+    psig.frame(ctx, w, h);
+    const R2s = 1 / P.T2 + 2 * Math.PI * P.width / 1000;   // Lorentz : 1/T2' = 2π·(demi-largeur)
+    psig.func((t) => Math.exp(-t / P.T2), { color: UI.css("--muted"), width: 1.3, dash: [5, 4] });
+    psig.func((t) => Math.exp(-t * R2s), { color: UI.css("--muted"), width: 1.3, dash: [1.5, 3] });
+    // Impulsions RF (bande en haut du graphe)
+    let xLab = -1e9;
+    S.ev.forEach((e) => {
+      const x = psig.X(e.t);
+      ctx.fillStyle = UI.css("--rf"); ctx.globalAlpha = 0.9;
+      ctx.fillRect(x - 2, psig.Y(1.15), 4, psig.Y(1.02) - psig.Y(1.15));
+      ctx.globalAlpha = 1;
+      if (e.lab && x - xLab > 46) { UI.text(ctx, e.lab, x + 5, psig.Y(1.085), { color: UI.css("--rf"), size: 11, weight: "600", halo: true }); xLab = x; }
+    });
+    echoTimes().forEach((t, i) => psig.vline(t, { color: UI.css("--ink2"), dash: [4, 4], width: 1, label: P.mode === "CPMG" ? (i === 0 ? "écho 1" : String(i + 1)) : "TE", labelDy: 18 }));
+    psig.line(S.rec.map((p) => p[0]), S.rec.map((p) => p[1]), { color: UI.css("--m-sum"), width: 2.2 });
+    if (S.cmp) {
+      const ts = echoTimes();
+      [["y", "CPMG", UI.css("--accent")], ["x", "CP", UI.css("--c-rouge")]].forEach(([k, nom, col]) => {
+        psig.line(ts, S.cmp[k], { color: col, width: 1.6, dash: [3, 3] });
+        ts.forEach((t, i) => psig.dot(t, S.cmp[k][i], { color: col, r: 4 }));
+        psig.label(ts[2], S.cmp[k][2], nom, { dx: 6, dy: k === "y" ? -11 : 11, align: "left", color: col, weight: "600" });
+      });
+    }
+    psig.vline(S.t, { color: UI.css("--accent"), width: 1 });
+    const xl = tmax() * 0.985;
+    psig.label(xl, Math.exp(-xl / P.T2), "exp(−t/T₂)", { align: "right", dy: -9, color: UI.css("--ink2") });
+    const tl = Math.min(xl, 1.6 / R2s);
+    psig.label(tl, Math.exp(-tl * R2s), "exp(−t/T₂*)", { align: "left", dx: 4, dy: -9, color: UI.css("--ink2") });
+  }
+
+  function readout() {
+    const m = sum(), a = Math.hypot(m[0], m[1]);
+    if (S.cmp) {
+      const k = 2, env = Math.exp(-(k + 1) * P.TE / P.T2);
+      UI.$("#ro").innerHTML = `Avec des 180° de ${P.angle}°, au ${k + 1}<sup>e</sup> écho : CPMG ${UI.fmt(S.cmp.y[k], 2)} · CP ${UI.fmt(S.cmp.x[k], 2)} · e<sup>−t/T₂</sup> = ${UI.fmt(env, 2)}. ` +
+        "CPMG suit la courbe T₂, CP s'effondre puis oscille.";
+      return;
+    }
+    const T2p = P.width > 0 ? 1000 / (2 * Math.PI * P.width) : Infinity;
+    const T2s = 1 / (1 / P.T2 + 1 / T2p);
+    const echo = P.mode === "GRE" ? Math.exp(-P.TE / T2s) : Math.exp(-P.TE / P.T2);
+    UI.$("#ro").innerHTML =
+      `|M<sub>xy</sub>| = ${UI.fmt(a, 2)} · T₂′ = ${isFinite(T2p) ? UI.fmt(T2p, 0) + " ms" : "∞"} · T₂* = ${UI.fmt(T2s, 0)} ms · ` +
+      (P.mode === "GRE" ? `sans 180°, à TE : e<sup>−TE/T₂*</sup> = ${UI.fmt(echo, 2)}` : `écho de spin à TE : e<sup>−TE/T₂</sup> = ${UI.fmt(echo, 2)}`);
+  }
+  function redraw() { c3.redraw(); cph.redraw(); csig.redraw(); readout(); }
+  legend();
+  reset();
+  // état initial présentable (utile pour l'aperçu statique / PDF) : on avance juste avant l'écho
+  window.__avance = function (ms) { S.ev.forEach(() => {}); let guard = 0; while (S.t < ms && guard++ < 100000) { if (S.rf) step(RF_DUR); else step(1 / 60); } redraw(); };
+})();
+</script>
+</body>
+</html>

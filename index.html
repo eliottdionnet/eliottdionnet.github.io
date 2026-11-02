@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eliott Dionnet</title>
+<meta name="description" content="Eliott Dionnet, élève ingénieur à Télécom Paris (Institut Polytechnique de Paris) et Polytechnique Montréal, diplômé de l'Université Paris-Saclay. Livres interactifs sur l'IRM, projet AbstractViz, rapports et portfolio.">
+<meta name="theme-color" content="#060b11">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23060b11'/%3E%3Cg fill='%23e8eef2'%3E%3Ccircle cx='10' cy='11' r='2'/%3E%3Ccircle cx='21' cy='9' r='1.5'/%3E%3Ccircle cx='16' cy='17' r='2.4'/%3E%3Ccircle cx='9' cy='22' r='1.4'/%3E%3C/g%3E%3Ccircle cx='23' cy='22' r='2.6' fill='%23f2b62a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..600;1,8..60,400&display=swap">
+<link rel="stylesheet" href="/accueil/accueil.css?v=10">
+</head>
+<body>
+<canvas id="champ" aria-hidden="true"></canvas>
+
+<header class="haut">
+  <p class="ident">
+    <span class="nom">Eliott Dionnet</span>
+    <span class="sous">Télécom&nbsp;Paris (Institut&nbsp;Polytechnique&nbsp;de&nbsp;Paris), Polytechnique&nbsp;Montréal et Université&nbsp;Paris-Saclay</span>
+  </p>
+  <nav class="liens" aria-label="Contact">
+    <a href="/accueil/cv-eliott-dionnet.pdf">CV</a>
+    <a href="https://github.com/eliottdionnet">GitHub</a>
+    <details class="contact">
+      <summary>Contact</summary>
+      <div class="panneau">
+        <a href="mailto:eliott.dionnet@etud.polymtl.ca"><span>Au Canada</span>eliott.dionnet@etud.polymtl.ca</a>
+        <a href="mailto:eliott.dionnet@telecom-paris.fr"><span>En France</span>eliott.dionnet@telecom-paris.fr</a>
+      </div>
+    </details>
+  </nav>
+</header>
+
+<main class="choix">
+  <h1>Où voulez-vous aller ?</h1>
+  <ul class="menu">
+    <li>
+      <a class="entree" href="/irm/" data-forme="irm" style="--c: #9fd2ff">
+        <span class="titre">Contraste en IRM</span>
+        <span class="desc">Le contraste et les séquences d'impulsion en livre interactif.</span>
+      </a>
+    </li>
+    <li>
+      <details class="depliant" data-forme="abstractviz" style="--c: #f08a9b">
+        <summary class="entree">
+          <span class="titre">AbstractViz</span>
+          <span class="desc">1&nbsp;700 peintures abstraites classées sans étiquette, la carte ou le rapport.</span>
+        </summary>
+        <ul class="sous-liens">
+          <li><a href="https://perso.telecom-paristech.fr/edionnet-24/abstractviz" data-forme-sous="abstractviz">
+            <span class="s-titre">Explorer la carte</span>
+            <span class="s-ctx">Naviguer parmi les tableaux, classe par classe.</span></a></li>
+          <li><a href="https://github.com/eliottdionnet/Principaux-Rapports-D-Etudes/blob/b23af3852b4b5fe1f7fbd161231eafe19af3c3a3/Extraction%20de%20Caract%C3%A9ristiques%20et%20Fusion%20Multimodale%20par%20Apprentissage%20Non%20Supervis%C3%A9.pdf" target="_blank" rel="noopener" data-forme-sous="rapport">
+            <span class="s-titre">Lire le rapport</span>
+            <span class="s-ctx">Extraction de caractéristiques et fusion multimodale par apprentissage non supervisé, projet IM06.</span></a></li>
+        </ul>
+      </details>
+    </li>
+    <li>
+      <a class="entree" href="https://github.com/eliottdionnet/Principaux-Rapports-D-Etudes/blob/b23af3852b4b5fe1f7fbd161231eafe19af3c3a3/Classification%20Automatique%20par%20Apprentissage%20Profond%20sur%20Donn%C3%A9es%20D%C3%A9s%C3%A9quilibr%C3%A9es.pdf" target="_blank" rel="noopener" data-forme="classification" style="--c: #b9a7ff">
+        <span class="titre">Classification</span>
+        <span class="desc">Rapport IMA205. Apprentissage profond sur des données très déséquilibrées.</span>
+      </a>
+    </li>
+    <li>
+      <a class="entree" href="/accueil/rapport-slic.pdf" target="_blank" rel="noopener" data-forme="slic" style="--c: #ff9e7a">
+        <span class="titre">Superpixels</span>
+        <span class="desc">Rapport. SLIC, de l'image couleur au cube hyperspectral.</span>
+      </a>
+    </li>
+    <li>
+      <a class="entree" href="/accueil/rapport-quantique.pdf" target="_blank" rel="noopener" data-forme="quantique" style="--c: #e7a3ff">
+        <span class="titre">Preuve quantique</span>
+        <span class="desc">Rapport Artishow. Un test de quanticité exécuté sur un processeur IBM.</span>
+      </a>
+    </li>
+    <li>
+      <a class="entree" href="/accueil/rapport-robot.pdf" target="_blank" rel="noopener" data-forme="robot" style="--c: #c6e36b">
+        <span class="titre">Robot autonome</span>
+        <span class="desc">Rapport Artefact. Un robot qui capture des balises ArUco, seul puis en équipe.</span>
+      </a>
+    </li>
+    <li>
+      <a class="entree" href="https://github.com/eliottdionnet/Principaux-Rapports-D-Etudes/blob/b23af3852b4b5fe1f7fbd161231eafe19af3c3a3/Analyse%20de%20Stabilit%C3%A9%20et%20Convergence%20de%20Sch%C3%A9mas%20Num%C3%A9riques%20(Syst%C3%A8mes%20Diff%C3%A9rentiels).pdf" target="_blank" rel="noopener" data-forme="schemas" style="--c: #8fe0c0">
+        <span class="titre">Schémas numériques</span>
+        <span class="desc">Rapport MACS. Stabilité et convergence d'un schéma d'Euler explicite.</span>
+      </a>
+    </li>
+    <li>
+      <a class="entree" href="/portfolio/" data-forme="portfolio" style="--c: #f2c25a">
+        <span class="titre">Portfolio</span>
+        <span class="desc">Mon parcours, tous mes projets avec leur code et mon CV.</span>
+      </a>
+    </li>
+  </ul>
+</main>
+
+<p class="legende" id="legende">Au repos, chaque point suit un processus d'Ornstein-Uhlenbeck.</p>
+
+<script src="/accueil/particules.js?v=10" defer></script>
+</body>
+</html>

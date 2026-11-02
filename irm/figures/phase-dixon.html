@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Images de phase et SWI sur le cerveau, Dixon sur l'abdomen</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #im { height: 300px; }
+</style>
+</head>
+<body>
+<div class="controls" id="ctl"></div>
+<div class="controls" id="ctl2"></div>
+<div class="card">
+  <div class="plot" id="im"></div>
+  <div class="readout" id="ro"></div>
+</div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script src="data/cerveau.js"></script>
+<script src="lib/abdomen.js"></script>
+<script>
+(function () {
+  const F = MRI.cerveau(), N = F.w * F.h;
+  const P = { tab: "dixon", TE: 20, veines: true, zoom: false };
+  const fHz = MRI.fatHz(F.B0), TIP = 1000 / Math.abs(fHz), TOP = TIP / 2;
+
+  const vS = UI.seg("#ctl", { label: "Vue", value: P.tab, options: [["dixon", "Séparation eau/graisse (Dixon)"], ["phase", "Image de phase et SWI"]], onChange: (v) => { P.tab = v; ui(); draw(); } });
+  const tS = UI.slider("#ctl2", { label: "TE", min: 3, max: 40, step: 0.5, value: P.TE, unit: "ms", fmt: (v) => UI.fmt(v, 1), onInput: (v) => { P.TE = v; draw(); } });
+  const pvS = UI.check("#ctl2", { label: "petites veines (plus fines qu'un voxel)", value: P.veines, onChange: (v) => { P.veines = v; draw(); } });
+  const zS = UI.seg("#ctl2", { label: "Affichage", value: P.zoom ? "z" : "t", options: [["t", "cerveau entier"], ["z", "zoom ×2"]], onChange: (v) => { P.zoom = v === "z"; draw(); } });
+  function ui() {
+    const d = P.tab === "dixon";
+    UI.$("#im").style.height = d ? "240px" : "300px";
+    [tS, pvS, zS].forEach((c) => { c.el.style.display = d ? "none" : ""; });
+  }
+
+  // ------------------------------------------------- Dixon 2 points en magnitude
+  // Sur une coupe d'abdomen (foie gras, moelle, graisse pure), le cerveau n'ayant pas de
+  // voxels où l'eau et la graisse se mélangent. La version avec la phase est dans l'annexe C.
+  const NA = ABDO.w * ABDO.h;
+  const DIX = (function () {
+    const ip = ABDO.simuler(TIP), op = ABDO.simuler(TOP);
+    const W = new Float32Array(NA), Fa = new Float32Array(NA), ff = new Float32Array(NA);
+    for (let i = 0; i < NA; i++) {
+      W[i] = (ip.mag[i] + op.mag[i]) / 2; Fa[i] = (ip.mag[i] - op.mag[i]) / 2;
+      ff[i] = Fa[i] / Math.max(ip.mag[i], 1e-6);
+    }
+    return { ip: ip.mag, op: op.mag, W, F: Fa, ff, hi: MRI.fenetre(ip.mag) };
+  })();
+
+  // ---------------------------------------------------------- phase / SWI
+  function boxBlur(a, r) {
+    const w = F.w, h = F.h, tmp = new Float32Array(N), out = new Float32Array(N);
+    for (let y = 0; y < h; y++) { let s = 0; for (let x = -r; x <= r; x++) s += a[y * w + UI.clamp(x, 0, w - 1)]; for (let x = 0; x < w; x++) { tmp[y * w + x] = s / (2 * r + 1); s += a[y * w + UI.clamp(x + r + 1, 0, w - 1)] - a[y * w + UI.clamp(x - r, 0, w - 1)]; } }
+    for (let x = 0; x < w; x++) { let s = 0; for (let y = -r; y <= r; y++) s += tmp[UI.clamp(y, 0, h - 1) * w + x]; for (let y = 0; y < h; y++) { out[y * w + x] = s / (2 * r + 1); s += tmp[UI.clamp(y + r + 1, 0, h - 1) * w + x] - tmp[UI.clamp(y - r, 0, h - 1) * w + x]; } }
+    return out;
+  }
+  // Petites veines médullaires : fines lignes radiales dans la substance blanche, plus fines
+  // qu'un voxel. PV[i] = fraction du voxel occupée par du sang veineux (volume partiel).
+  const LARG = 0.3, DF_V = 6;                       // largeur de la veine (en voxels), décalage dans la veine (Hz)
+  const PV = (function () {
+    const w = F.w, h = F.h, pv = new Float32Array(N);
+    let seed = 777;
+    const rnd = () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let r = Math.imul(seed ^ (seed >>> 15), 1 | seed); r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r; return ((r ^ (r >>> 14)) >>> 0) / 4294967296; };
+    let cx = 0, cy = 0, m = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const v = F.head[y * w + x]; if (v > 0.5) { cx += x; cy += y; m++; } }
+    cx /= m; cy /= m;
+    const blanc = (x, y) => { const i = Math.floor(y) * w + Math.floor(x); return x >= 0 && y >= 0 && x < w && y < h && F.f.sb[i] > 0.6 && F.r2p[i] < 1 && Math.abs(F.df[i]) < 4; };
+    let nv = 0;
+    for (let essai = 0; essai < 4000 && nv < 55; essai++) {
+      let x = rnd() * w, y = rnd() * h;
+      if (!blanc(x, y)) continue;
+      nv++;
+      let a = Math.atan2(y - cy, x - cx) + (rnd() - 0.5) * 0.6;   // à peu près radiale
+      const L = 8 + rnd() * 20, courbe = (rnd() - 0.5) * 0.04;
+      for (let l = 0; l < L && blanc(x, y); l += 0.25) {
+        for (let yy = Math.floor(y) - 1; yy <= Math.floor(y) + 1; yy++) for (let xx = Math.floor(x) - 1; xx <= Math.floor(x) + 1; xx++) {
+          if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+          const d = Math.hypot(xx + 0.5 - x, yy + 0.5 - y), c = LARG * Math.max(0, 1 - d), i = yy * w + xx;
+          if (c > pv[i]) pv[i] = c;
+        }
+        x += 0.25 * Math.cos(a); y += 0.25 * Math.sin(a); a += courbe;
+      }
+    }
+    return pv;
+  })();
+  // facteur complexe d'un voxel dont une fraction f est une veine décalée de DF_V
+  const zVoxel = (f, te) => { const p = 2 * Math.PI * DF_V * te / 1000; return [1 - f + f * Math.cos(p), f * Math.sin(p)]; };
+
+  function phaseSWI() {
+    const r = MRI.simuler({ seq: "GRE", TR: 40, alpha: 15, TE: P.TE, noise: 0.003 });
+    if (P.veines) for (let i = 0; i < N; i++) {
+      if (!PV[i]) continue;
+      const [zr, zi] = zVoxel(PV[i], P.TE), a = r.re[i] * zr - r.im[i] * zi, b = r.re[i] * zi + r.im[i] * zr;
+      r.re[i] = a; r.im[i] = b; r.mag[i] = Math.hypot(a, b);
+    }
+    const ph = new Float32Array(N), hp = new Float32Array(N), swi = new Float32Array(N);
+    const lr = boxBlur(r.re, 6), li = boxBlur(r.im, 6);
+    for (let i = 0; i < N; i++) {
+      ph[i] = Math.atan2(r.im[i], r.re[i]);
+      // filtre passe-haut homodyne : S · conj(LP(S)) / |LP(S)|
+      const a = r.re[i] * lr[i] + r.im[i] * li[i], b = r.im[i] * lr[i] - r.re[i] * li[i];
+      hp[i] = Math.atan2(b, a);
+      const m = hp[i] > 0 ? (Math.PI - Math.min(hp[i], Math.PI)) / Math.PI : 1;   // masque de phase
+      swi[i] = r.mag[i] * Math.pow(m, 4);
+    }
+    return { mag: r.mag, ph, hp, swi };
+  }
+
+  // en zoom, on ne garde que le centre de la coupe (substance blanche autour des ventricules)
+  const ZX = Math.round(F.w * 0.22), ZY = Math.round(F.h * 0.25), ZW = Math.round(F.w * 0.56), ZH = Math.round(F.h * 0.5);
+  const rogner = (a) => { if (!a) return a; const o = new Float32Array(ZW * ZH); for (let y = 0; y < ZH; y++) for (let x = 0; x < ZW; x++) o[y * ZW + x] = a[(ZY + y) * F.w + ZX + x]; return o; };
+  function dessinerVue(ctx, data, rect, o) {
+    if (!P.zoom) return MRI.dessiner(ctx, data, rect, o);
+    const top = 18, bot = 16;
+    const r = UI.image(ctx, rogner(data), ZW, ZH, { x: rect.x, y: rect.y + top, w: rect.w, h: rect.h - top - bot }, Object.assign({}, o, { mask: rogner(o.mask) }));
+    UI.text(ctx, o.label, r.x + r.w / 2, rect.y + 8, { color: UI.css("--ink"), size: 12.5, weight: "600", align: "center" });
+    UI.text(ctx, o.sub, r.x + r.w / 2, r.y + r.h + 9, { color: UI.css("--ink2"), size: 11, align: "center" });
+    return r;
+  }
+
+  const ci = UI.canvas("#im", (ctx, w, h) => {
+    const gw = (w - 18) / 4, R = (i) => ({ x: i * (gw + 6), y: 0, w: gw, h });
+    if (P.tab === "dixon") {
+      const d = DIX, hi = d.hi, rh = Math.min(h, gw * ABDO.h / ABDO.w + 34), y0 = (h - rh) / 2;
+      const R = (i) => ({ x: i * (gw + 6), y: y0, w: gw, h: rh });
+      ABDO.dessiner(ctx, d.ip, R(0), { lo: 0, hi, label: "En phase (IP)", sub: "TE = " + UI.fmt(TIP, 2) + " ms" });
+      ABDO.dessiner(ctx, d.op, R(1), { lo: 0, hi, label: "Opposition (OP)", sub: "TE = " + UI.fmt(TOP, 2) + " ms" });
+      ABDO.dessiner(ctx, d.W, R(2), { lo: 0, hi, label: "Eau estimée", sub: "(|IP| + |OP|)/2" });
+      ABDO.dessiner(ctx, d.F, R(3), { lo: 0, hi, label: "Graisse estimée", sub: "(|IP| − |OP|)/2" });
+    } else {
+      const s = phaseSWI(), hi = MRI.fenetre(s.mag);
+      dessinerVue(ctx, s.mag, R(0), { lo: 0, hi, label: "Magnitude", sub: "EG, TE = " + UI.fmt(P.TE, 1) + " ms" });
+      dessinerVue(ctx, s.ph, R(1), { lo: -Math.PI, hi: Math.PI, cmap: "phase", mask: F.head, label: "Phase brute", sub: "repliée dans [−π, π]" });
+      dessinerVue(ctx, s.hp, R(2), { lo: -1, hi: 1, cmap: "gray", mask: F.head, label: "Phase filtrée", sub: "passe-haut" });
+      dessinerVue(ctx, s.swi, R(3), { lo: 0, hi, label: "SWI", sub: "magnitude × masque⁴" });
+    }
+  });
+
+  function draw() {
+    ci.redraw();
+    UI.$("#ro").innerHTML = P.tab === "dixon"
+      ? dixonTexte()
+      : (P.veines ? petitesVeines() + " " : "") + `Les grosses bosses de phase (sinus, rochers) se replient quand TE augmente. Le filtre passe-haut ne garde que les variations fines, que la SWI transforme en contraste.`;
+  }
+  // fractions de graisse vraies et estimées (Dixon en magnitude) dans quelques tissus
+  function dixonTexte() {
+    const pc = (v) => UI.fmt(100 * v, 0) + "&nbsp;%", T = ABDO.TISSUS;
+    const ligne = (t) => `${T[t].nom} ${pc(T[t].ff)}, estimée ${pc(ABDO.moyenne(DIX.ff, t))}`;
+    return `Coupe d'abdomen simulée, Dixon en magnitude. Fractions de graisse vraies et estimées : ${ligne("foie")} ; ${ligne("os")} ; ${ligne("sc")} ; ${ligne("visc")}. ` +
+      "Tant que l'eau domine, l'estimation est juste. Dans la graisse presque pure (F &gt; W), |OP| = F − W et l'eau et la graisse sont échangées : cette graisse part dans l'image « eau ».";
+  }
+  // effet au cœur d'une petite veine (fraction LARG du voxel) pour le TE choisi
+  function petitesVeines() {
+    const [zr, zi] = zVoxel(LARG, P.TE), mag = Math.hypot(zr, zi), phi = Math.atan2(zi, zr);
+    const m = Math.pow((Math.PI - phi) / Math.PI, 4);
+    const pc = (v) => (v < 0.01 ? "moins de 1" : UI.fmt(100 * v, 0));
+    return `Au centre d'une petite veine (${UI.fmt(100 * LARG, 0)} % du voxel, ${DF_V} Hz), à TE = ${UI.fmt(P.TE, 1)} ms, la magnitude baisse de ${pc(1 - mag)} % et la SWI de ${pc(1 - mag * m)} %, car la phase du voxel a tourné de ${UI.fmt(phi, 2)} rad.`;
+  }
+  ui(); draw();
+  window.__set = (o) => { Object.assign(P, o); vS.set(P.tab, true); if (o.TE !== undefined) tS.set(P.TE, true); pvS.set(P.veines, true); zS.set(P.zoom ? "z" : "t", true); ui(); draw(); };
+})();
+</script>
+</body>
+</html>

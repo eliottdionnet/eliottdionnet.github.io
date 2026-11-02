@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Train d'impulsions et régime permanent</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #v3d { height: 300px; }
+  #pz { height: 190px; }
+  #pxy { height: 150px; }
+</style>
+</head>
+<body>
+<div class="controls" id="ctl"></div>
+<div class="row" id="tis" style="margin-bottom:8px"></div>
+<div class="grid2" style="grid-template-columns: 2fr 3fr">
+  <div class="card">
+    <h4 id="t3d">Aimantation</h4>
+    <div class="plot" id="v3d"></div>
+    <div class="readout" id="ro"></div>
+  </div>
+  <div class="card">
+    <h4>M<sub>z</sub> juste avant/après chaque impulsion (RF tous les TR)</h4>
+    <div class="plot" id="pz"></div>
+    <h4 style="margin-top:4px">M<sub>xy</sub> : signal créé à chaque impulsion, puis déphasé (spoiling)</h4>
+    <div class="plot" id="pxy"></div>
+  </div>
+</div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script>
+(function () {
+  const N = 20;                          // impulsions affichées
+  const P = { alpha: 30, TR: 100, sel: { sb: true, lcr: true, gr: true, sg: false }, show: "sb" };
+  let t = 0, flip = null;                // temps (ms), animation d'impulsion en cours
+  const FLIP_DUR = 0.35;                 // s réelles par impulsion
+
+  UI.slider("#ctl", { label: "Angle de bascule α", min: 1, max: 90, step: 1, value: P.alpha, unit: "°", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.alpha = v; restart(); } });
+  UI.slider("#ctl", { label: "TR", min: 5, max: 3000, log: true, value: P.TR, unit: "ms", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.TR = v; restart(); } });
+  const bx = UI.el("div", { class: "row", style: "gap:6px;align-items:flex-end;flex:0 0 auto" }); UI.$("#ctl").appendChild(bx);
+  const anim = new UI.Anim(step);
+  UI.playButton(bx, anim);
+  UI.button(bx, "↺", () => restart());
+  const ids = ["sb", "sg", "lcr", "gr"];
+  const checks = {};
+  ids.forEach((id) => { checks[id] = UI.check("#tis", { label: MRI.T[id].nom, value: P.sel[id], color: UI.tcolor(id), onChange: (v) => { P.sel[id] = v; redraw(); } }); });
+  UI.onTheme(() => ids.forEach((id) => { checks[id].swatch.style.background = UI.tcolor(id); }));
+  UI.seg("#tis", { value: P.show, options: ids.map((id) => [id, "3D : " + MRI.T[id].court]), onChange: (v) => { P.show = v; redraw(); } });
+  const on = () => ids.filter((id) => P.sel[id]);
+
+  // ----------------------------------------------- évolution exacte (spoiled)
+  // Mz⁻(n+1) = Mz⁻(n) cos α E1 + (1 − E1)       (eq-recurrence)
+  function mzMinus(id, n) {
+    const T1 = MRI.T[id].T1, E1 = Math.exp(-P.TR / T1), c = Math.cos(P.alpha * UI.DEG);
+    let m = 1; for (let k = 0; k < n; k++) m = m * c * E1 + (1 - E1);
+    return m;
+  }
+  function state(id, tt) {                // [Mz, Mxy] au temps tt (hors animation d'impulsion)
+    const T = MRI.T[id], n = Math.floor(tt / P.TR + 1e-9), tau = tt - n * P.TR;
+    if (tt < 0) return [1, 0];
+    const m = mzMinus(id, n), s = Math.sin(P.alpha * UI.DEG), c = Math.cos(P.alpha * UI.DEG);
+    return [1 + (m * c - 1) * Math.exp(-tau / T.T1), m * s * Math.exp(-tau / T.T2s)];
+  }
+  const mss = (id) => MRI.mzss(MRI.T[id].T1, P.TR, P.alpha);
+
+  // --------------------------------------------------------------- animation
+  function restart() { anim.pause(); t = -0.001; flip = null; redraw(); }
+  function step(dt) {
+    if (flip) {
+      flip.p += dt / FLIP_DUR;
+      if (flip.p >= 1) { flip = null; t = flip0 + 1e-6; }
+      redraw(); return;
+    }
+    const next = Math.floor(t / P.TR + 1e-9) + 1, tNext = next * P.TR;
+    const tn = t + dt * P.TR / 0.8;      // ~0,8 s réelle par TR
+    if (t < 0 || tn >= tNext) {
+      const k = t < 0 ? 0 : next;
+      if (k >= N) { t = N * P.TR - 1e-6; redraw(); return false; }
+      t = k * P.TR - 1e-6; flip = { p: 0, n: k }; flip0 = k * P.TR; redraw(); return;
+    }
+    t = tn; redraw();
+  }
+  let flip0 = 0;
+
+  // ------------------------------------------------------------------ 3D
+  const c3 = UI.canvas("#v3d", (ctx, w, h) => {
+    view.begin(ctx, w, h).axes({ b0: true });
+    const id = P.show, col = UI.tcolor(id);
+    let v;
+    if (flip) {
+      const pre = state(id, flip0 - 1e-6);
+      v = MRI.rotRF([0, 0, pre[0]], P.alpha * UI.DEG * UI.clamp(flip.p, 0, 1), 0);
+      const ax = [1.15, 0, 0]; view.vec(ax, UI.css("--rf"), 2, 8);
+      const pp = view.P(ax); UI.text(ctx, "B₁ : " + P.alpha + "°", pp[0] - 4, pp[1] + 14, { color: UI.css("--rf"), size: 12, weight: "600", halo: true, align: "right" });
+    } else {
+      const [mz, mxy] = state(id, t);
+      v = [0, -mxy, mz];
+    }
+    // position en régime permanent (juste avant l'impulsion), en filigrane
+    view.vec([0, 0, mss(id)], col, 1.5, 7, 0.3);
+    view.vec(v, col, 3, 10);
+    const n = Math.max(0, Math.floor((flip ? flip0 : t) / P.TR + 1e-9));
+    UI.text(ctx, `impulsion n° ${Math.min(n + (flip ? 1 : t >= 0 ? 1 : 0), N)} · t = ${UI.fmt(Math.max(t, 0), 0)} ms`, 10, 14, { color: UI.css("--ink"), size: 12.5, weight: "600" });
+  });
+  const view = new UI.View3D(c3, { az: -118, el: 18, zoom: 0.4 });
+
+  // --------------------------------------------------------------- courbes
+  function traj(id, key) {
+    const xs = [], ys = [];
+    for (let n = 0; n < N; n++) {
+      const t0 = n * P.TR;
+      const pre = state(id, t0 - 1e-6);
+      if (key === "z") { xs.push(t0); ys.push(n === 0 ? 1 : pre[0]); }
+      for (let k = 0; k <= 24; k++) { const tt = t0 + (k / 24) * P.TR * 0.999; xs.push(tt); ys.push(state(id, tt)[key === "z" ? 0 : 1]); }
+      if (key === "xy") { xs.push(t0 + P.TR); ys.push(null); }   // spoiling : l'arc s'arrête
+    }
+    return [xs, ys];
+  }
+  const cz = UI.canvas("#pz", (ctx, w, h) => {
+    pz.x = { min: 0, max: N * P.TR, label: "", fmt: () => "" };
+    pz.frame(ctx, w, h);
+    for (let n = 0; n < N; n++) { const x = pz.X(n * P.TR); ctx.fillStyle = UI.css("--rf"); ctx.globalAlpha = 0.5; ctx.fillRect(x - 1, pz.T, 2, 6); ctx.globalAlpha = 1; }
+    on().forEach((id) => {
+      const [xs, ys] = traj(id, "z");
+      pz.hline(mss(id), { color: UI.tcolor(id), dash: [3, 4], width: 1 });
+      pz.line(xs, ys, { color: UI.tcolor(id), width: 1.8 });
+    });
+    pz.endLabels(on().map((id) => ({ name: MRI.T[id].court, f: () => mss(id) })), N * P.TR);
+    pz.vline(Math.max(0, t), { color: UI.css("--ink"), width: 1 });
+  });
+  const pz = new UI.Plot(cz, { x: { min: 0, max: 1 }, y: { min: 0, max: 1.02, ticks: [0, 0.5, 1], label: "Mz / M₀" }, pad: { l: 46, r: 40, t: 8, b: 14 } });
+  const cxy = UI.canvas("#pxy", (ctx, w, h) => {
+    pxy.x = { min: 0, max: N * P.TR, label: "t (ms)" };
+    const top = Math.max(0.05, ...on().map((id) => Math.sin(P.alpha * UI.DEG)));
+    pxy.y = { min: 0, max: top * 1.05, label: "Mxy / M₀" };
+    pxy.frame(ctx, w, h);
+    on().forEach((id) => {
+      const [xs, ys] = traj(id, "xy");
+      pxy.line(xs, ys, { color: UI.tcolor(id), width: 1.6 });
+      pxy.hline(mss(id) * Math.sin(P.alpha * UI.DEG), { color: UI.tcolor(id), dash: [3, 4], width: 1 });
+    });
+    pxy.endLabels(on().map((id) => ({ name: MRI.T[id].court, f: () => mss(id) * Math.sin(P.alpha * UI.DEG) })), N * P.TR);
+    pxy.vline(Math.max(0, t), { color: UI.css("--ink"), width: 1 });
+  });
+  const pxy = new UI.Plot(cxy, { x: { min: 0, max: 1 }, y: { min: 0, max: 1 }, pad: { l: 46, r: 40, t: 8, b: 34 } });
+
+  function redraw() {
+    c3.redraw(); cz.redraw(); cxy.redraw();
+    const id = P.show, T1 = MRI.T[id].T1, E1 = Math.exp(-P.TR / T1), q = Math.cos(P.alpha * UI.DEG) * E1;
+    const n95 = q > 0 && q < 1 ? Math.ceil(Math.log(0.05) / Math.log(q)) : 1;
+    UI.$("#t3d").textContent = "Aimantation — " + MRI.T[id].nom;
+    UI.$("#ro").innerHTML = `${MRI.T[id].court} : M<sub>z</sub><sup>−</sup>(∞) = ${UI.fmt(mss(id), 3)} · signal = M<sub>z</sub><sup>−</sup>(∞) sin α = ${UI.fmt(mss(id) * Math.sin(P.alpha * UI.DEG), 3)} · ` +
+      `95&nbsp;% du régime permanent après ≈ ${n95} impulsion${n95 > 1 ? "s" : ""} · angle d'Ernst : ${UI.fmt(MRI.ernst(P.TR, T1), 1)}°`;
+  }
+  restart();
+  window.__t = (ms) => { t = ms; flip = null; redraw(); };
+})();
+</script>
+</body>
+</html>

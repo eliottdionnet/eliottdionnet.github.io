@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inversion-récupération : STIR, FLAIR, PSIR</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #pm { height: 230px; }
+  #vec { height: 120px; }
+  #im { height: 380px; }
+</style>
+</head>
+<body>
+<div class="controls" id="ctl"></div>
+<div class="grid2">
+  <div class="card">
+    <h4>M<sub>z</sub> au moment de l'excitation, en fonction de TI</h4>
+    <div class="plot" id="pm"></div>
+    <h4 style="margin-top:4px">Aimantation de chaque tissu à TI (flèches M<sub>z</sub>)</h4>
+    <div class="plot" id="vec"></div>
+  </div>
+  <div class="card">
+    <div class="plot" id="im"></div>
+    <div class="readout" id="ro"></div>
+  </div>
+</div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script src="data/cerveau.js"></script>
+<script>
+(function () {
+  const IDS = ["sb", "sg", "lcr", "gr", "les"];
+  const P = { TR: 10000, TI: 800, TE: 20, psir: false };
+  const nice = (v) => (v < 100 ? Math.round(v) : v < 1000 ? Math.round(v / 5) * 5 : Math.round(v / 50) * 50);
+  const trS = UI.slider("#ctl", { label: "TR", min: 1000, max: 12000, log: true, round: nice, value: P.TR, unit: "ms", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.TR = v; draw(); } });
+  const tiS = UI.slider("#ctl", { label: "TI", min: 20, max: 4000, log: true, round: nice, value: P.TI, unit: "ms", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.TI = v; draw(); } });
+  const teS = UI.slider("#ctl", { label: "TE", min: 10, max: 150, step: 1, value: P.TE, unit: "ms", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.TE = v; draw(); } });
+  UI.seg("#ctl", { label: "Reconstruction", value: false, options: [[false, "magnitude"], [true, "PSIR (signée)"]], onChange: (v) => { P.psir = v; draw(); } });
+  const bx = UI.el("div", { class: "row", style: "gap:6px;align-items:flex-end;flex:0 0 auto" }); UI.$("#ctl").appendChild(bx);
+  const preset = (TR, TE, id) => { P.TR = TR; P.TE = TE; P.TI = Math.round(MRI.tiNull(MRI.T[id].T1, TR)); trS.set(P.TR, true); teS.set(P.TE, true); tiS.set(P.TI, true); draw(); };
+  UI.button(bx, "STIR", () => preset(4000, 40, "gr"));
+  UI.button(bx, "FLAIR", () => preset(10000, 120, "lcr"));
+
+  const mz = (id, ti) => MRI.irMz(MRI.T[id].T1, P.TR, ti);
+  const series = () => IDS.map((id) => ({ name: MRI.T[id].court, color: UI.tcolor(id), f: (ti) => (P.psir ? mz(id, ti) : Math.abs(mz(id, ti))) }));
+
+  // ------------------------------------------------------------- Mz(TI)
+  const cm = UI.canvas("#pm", (ctx, w, h) => {
+    pm.y = P.psir ? { min: -1.05, max: 1.05, label: "Mz / M₀", ticks: [-1, -0.5, 0, 0.5, 1] } : { min: 0, max: 1.05, label: "|Mz| / M₀", ticks: [0, 0.5, 1] };
+    pm.frame(ctx, w, h);
+    IDS.forEach((id) => {
+      pm.func((ti) => (P.psir ? mz(id, ti) : Math.abs(mz(id, ti))), { color: UI.tcolor(id), width: 2.2 });
+      const tn = MRI.tiNull(MRI.T[id].T1, P.TR);
+      if (tn < 4000) { const x = pm.X(tn), y = pm.Y(0); ctx.fillStyle = UI.tcolor(id); ctx.beginPath(); ctx.moveTo(x, y - 9); ctx.lineTo(x - 5, y); ctx.lineTo(x + 5, y); ctx.closePath(); ctx.fill(); }
+    });
+    pm.endLabels(series(), 4000);
+    pm.vline(P.TI, { color: UI.css("--ink"), width: 1.2, label: "TI" });
+    series().forEach((s) => pm.dot(P.TI, s.f(P.TI), { color: s.color, r: 4 }));
+    pm.drawHover();
+  });
+  const pm = new UI.Plot(cm, { x: { min: 0, max: 4000, label: "TI (ms)  — ▲ : TI d'annulation" }, y: { min: 0, max: 1 }, pad: { l: 50, r: 40, t: 8, b: 36 } });
+  pm.hoverable(cm, series, { xName: "TI (ms)", y: (v) => UI.fmt(v, 3) });
+
+  // -------------------------------------------------------------- flèches
+  const cv = UI.canvas("#vec", (ctx, w, h) => {
+    const n = IDS.length, cw = w / n, y0 = h / 2 + 4, L = h * 0.38;
+    IDS.forEach((id, i) => {
+      const x = cw * (i + 0.5), m = mz(id, P.TI);
+      ctx.strokeStyle = UI.css("--grid"); ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(x, y0 - L); ctx.lineTo(x, y0 + L); ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle = UI.css("--axis"); ctx.beginPath(); ctx.moveTo(x - 16, y0); ctx.lineTo(x + 16, y0); ctx.stroke();
+      if (Math.abs(m) > 0.02) UI.arrow(ctx, x, y0, x, y0 - m * L, UI.tcolor(id), 3, 9);
+      else { ctx.fillStyle = UI.tcolor(id); ctx.beginPath(); ctx.arc(x, y0, 4, 0, 7); ctx.fill(); }
+      UI.text(ctx, MRI.T[id].court, x, h - 6, { align: "center", size: 11.5, color: UI.css("--ink2") });
+    });
+  });
+
+  // ---------------------------------------------------------------- image
+  const ci = UI.canvas("#im", (ctx, w, h) => {
+    const r = MRI.simuler({ seq: "IR", TR: P.TR, TE: P.TE, TI: P.TI, noise: 0.005 });
+    let data = r.mag, lo = 0, hi = MRI.fenetre(r.mag);
+    if (P.psir) { data = new Float32Array(r.re.length); for (let i = 0; i < data.length; i++) data[i] = Math.sign(r.re[i]) * r.mag[i]; lo = -hi; }
+    MRI.dessiner(ctx, data, { x: 0, y: 0, w, h }, { lo, hi, label: P.psir ? "PSIR : noir = Mz négatif, gris = 0" : "Magnitude : |Mz| (le signe est perdu)", sub: `TR ${UI.fmt(P.TR, 0)} · TI ${UI.fmt(P.TI, 0)} · TE ${UI.fmt(P.TE, 0)} ms` });
+  });
+
+  function draw() {
+    cm.redraw(); cv.redraw(); ci.redraw();
+    UI.$("#ro").innerHTML = "TI d'annulation (TR = " + UI.fmt(P.TR, 0) + " ms) : " + IDS.map((id) => `${MRI.T[id].court} ${UI.fmt(MRI.tiNull(MRI.T[id].T1, P.TR), 0)}`).join(" · ") + " ms";
+  }
+  draw();
+  window.__set = (o) => { Object.assign(P, o); trS.set(P.TR, true); tiS.set(P.TI, true); teS.set(P.TE, true); draw(); };
+})();
+</script>
+</body>
+</html>

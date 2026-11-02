@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eau et graisse : phaseurs, en phase / opposition de phase</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #ph { height: 235px; }
+  #ps { height: 235px; }
+  #pd { height: 150px; }
+</style>
+</head>
+<body>
+<div class="controls" id="ctl"></div>
+<div class="grid2">
+  <div class="card">
+    <h4>Phaseurs dans un voxel (référentiel de l'eau)</h4>
+    <div class="plot" id="ph"></div>
+  </div>
+  <div class="card">
+    <h4>Module du signal |S(TE)| = |W + F e<sup>i2πΔf·TE</sup>|</h4>
+    <div class="plot" id="ps"></div>
+  </div>
+</div>
+<div class="card" style="margin-top:12px">
+  <h4>Dixon 2 points en magnitude : fraction de graisse estimée vs vraie</h4>
+  <div class="plot" id="pd"></div>
+  <div class="readout" id="ro"></div>
+</div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script>
+(function () {
+  const P = { B0: 3, ff: 0.3, TE: 1.2 };
+  const df = () => MRI.fatHz(P.B0);                 // Hz (< 0)
+  const tIP = () => 1000 / Math.abs(df());          // ms
+  const phi = (te) => 2 * Math.PI * df() * te / 1000;
+  const mag = (te) => Math.hypot((1 - P.ff) + P.ff * Math.cos(phi(te)), P.ff * Math.sin(phi(te)));
+
+  UI.seg("#ctl", { label: "B₀", value: 3, options: [[1.5, "1,5 T"], [3, "3 T"]], onChange: (v) => { P.B0 = v; draw(); } });
+  UI.slider("#ctl", { label: "Fraction de graisse du voxel", min: 0, max: 1, step: 0.01, value: P.ff, fmt: (v) => UI.fmt(100 * v, 0) + " %", onInput: (v) => { P.ff = v; draw(); } });
+  const teS = UI.slider("#ctl", { label: "TE", min: 0, max: 10, step: 0.02, value: P.TE, unit: "ms", fmt: (v) => UI.fmt(v, 2), onInput: (v) => { P.TE = v; draw(); } });
+  const bx = UI.el("div", { class: "row", style: "gap:6px;align-items:flex-end;flex:0 0 auto" }); UI.$("#ctl").appendChild(bx);
+  const anim = new UI.Anim((dt) => { P.TE += dt * 1.2; if (P.TE > 10) P.TE = 0; teS.set(P.TE, true); draw(); });
+  UI.playButton(bx, anim);
+  UI.button(bx, "OP", () => { anim.pause(); P.TE = tIP() / 2; teS.set(P.TE, true); draw(); });
+  UI.button(bx, "IP", () => { anim.pause(); P.TE = tIP(); teS.set(P.TE, true); draw(); });
+
+  // ------------------------------------------------------------ phaseurs
+  const cph = UI.canvas("#ph", (ctx, w, h) => {
+    const R = Math.min(w, h) * 0.4, cx = w / 2 - R * 0.1, cy = h / 2 + 8;
+    ctx.strokeStyle = UI.css("--grid"); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - R - 10, cy); ctx.lineTo(cx + R + 10, cy); ctx.moveTo(cx, cy - R - 10); ctx.lineTo(cx, cy + R + 10); ctx.stroke();
+    const Wv = [1 - P.ff, 0], p = phi(P.TE), Fv = [P.ff * Math.cos(p), P.ff * Math.sin(p)];
+    const X = (v) => cx + v * R, Y = (v) => cy - v * R;
+    // trajectoire du bout de F (cercle)
+    ctx.strokeStyle = UI.tcolor("gr"); ctx.globalAlpha = 0.35; ctx.setLineDash([3, 4]);
+    ctx.beginPath(); ctx.arc(X(Wv[0]), cy, P.ff * R, 0, 7); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+    UI.arrow(ctx, X(0), Y(0), X(Wv[0]), Y(0), UI.tcolor("lcr"), 3, 10);
+    UI.arrow(ctx, X(Wv[0]), Y(0), X(Wv[0] + Fv[0]), Y(Fv[1]), UI.tcolor("gr"), 3, 10);
+    UI.arrow(ctx, X(0), Y(0), X(Wv[0] + Fv[0]), Y(Fv[1]), UI.css("--m-sum"), 2.2, 10);
+    UI.text(ctx, "eau W", X(Wv[0] / 2), cy + 14, { align: "center", color: UI.tcolor("lcr"), size: 12, weight: "600", halo: true });
+    UI.text(ctx, "graisse F", X(Wv[0] + Fv[0]) + 6, Y(Fv[1]) - 10, { color: UI.tcolor("gr"), size: 12, weight: "600", halo: true });
+    const deg = ((p / UI.DEG) % 360 + 360) % 360;
+    UI.text(ctx, `TE = ${UI.fmt(P.TE, 2)} ms · déphasage graisse/eau = ${UI.fmt(deg, 0)}°`, 8, 12, { color: UI.css("--ink"), size: 12.5, weight: "600" });
+    UI.text(ctx, `Δf graisse = ${UI.fmt(df(), 0)} Hz`, 8, 30, { color: UI.css("--ink2"), size: 12 });
+  });
+
+  // ------------------------------------------------------------- |S|(TE)
+  const cs = UI.canvas("#ps", (ctx, w, h) => {
+    ps.frame(ctx, w, h);
+    for (let k = 1; k * tIP() / 2 <= 10; k++) {
+      const t = k * tIP() / 2;
+      ps.vline(t, { color: k % 2 ? UI.css("--neg") : UI.css("--pos"), dash: [3, 4], width: 1, label: k % 2 ? "OP" : "IP", labelDy: -17 });
+    }
+    ps.func(mag, { color: UI.css("--m-sum"), width: 2.2, n: 500 });
+    ps.hline(1 - P.ff, { color: UI.tcolor("lcr"), dash: [5, 4], width: 1 });
+    UI.text(ctx, "W", ps.R + 5, ps.Y(1 - P.ff), { color: UI.tcolor("lcr"), size: 11.5, weight: "600" });
+    ps.vline(P.TE, { color: UI.css("--accent"), width: 1.2 });
+    ps.dot(P.TE, mag(P.TE), { color: UI.css("--m-sum") });
+    ps.drawHover();
+  });
+  const ps = new UI.Plot(cs, { x: { min: 0, max: 10, label: "TE (ms)" }, y: { min: 0, max: 1.05, ticks: [0, 0.25, 0.5, 0.75, 1], label: "|S| / (W + F)" }, pad: { l: 50, r: 24, t: 22, b: 34 } });
+  ps.hoverable(cs, () => [{ name: "|S|", color: UI.css("--m-sum"), f: mag }], { xName: "TE (ms)", y: (v) => UI.fmt(v, 3) });
+
+  // --------------------------------------------------------- Dixon 2 points
+  const est = (f) => { const ip = 1, op = Math.abs(1 - 2 * f); return (ip - op) / (2 * ip); };
+  const cd = UI.canvas("#pd", (ctx, w, h) => {
+    pd.frame(ctx, w, h);
+    pd.func((f) => f, { color: UI.css("--muted"), dash: [4, 4], width: 1.2 });
+    pd.func(est, { color: UI.tcolor("gr"), width: 2.4 });
+    pd.label(0.9, 0.9, "idéal", { color: UI.css("--muted"), align: "left", dx: 4, dy: 12 });
+    pd.label(0.78, est(0.78), "eau et graisse échangées", { color: UI.css("--ink"), dy: -22, align: "center" });
+    pd.dot(P.ff, est(P.ff), { color: UI.tcolor("gr") });
+    pd.label(0.02, 0.88, "vraie " + UI.fmt(100 * P.ff, 0) + " % → estimée " + UI.fmt(100 * est(P.ff), 0) + " %", { color: UI.tcolor("gr"), weight: "600" });
+  });
+  const pd = new UI.Plot(cd, { x: { min: 0, max: 1, label: "vraie fraction de graisse", fmt: (v) => UI.fmt(100 * v, 0) + " %" }, y: { min: 0, max: 1, ticks: [0, 0.5, 1], fmt: (v) => UI.fmt(100 * v, 0) + " %", label: "estimée" }, pad: { l: 50, r: 22, t: 8, b: 34 } });
+
+  function draw() {
+    cph.redraw(); cs.redraw(); cd.redraw();
+    const W = 1 - P.ff, F = P.ff, ip = W + F, op = Math.abs(W - F);
+    UI.$("#ro").innerHTML = `En phase (TE = ${UI.fmt(tIP(), 2)} ms) : IP = W + F = ${UI.fmt(ip, 2)} · opposition (TE = ${UI.fmt(tIP() / 2, 2)} ms) : |OP| = |W − F| = ${UI.fmt(op, 2)} → ` +
+      `Ŵ = (IP + |OP|)/2 = ${UI.fmt((ip + op) / 2, 2)}, F̂ = (IP − |OP|)/2 = ${UI.fmt((ip - op) / 2, 2)}` + (F > 0.5 ? " — faux : la magnitude ne dit pas qui domine." : "");
+  }
+  draw();
+})();
+</script>
+</body>
+</html>

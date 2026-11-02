@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relaxation T1 et T2</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #v3d { height: 340px; }
+  #pxy, #pz { height: 164px; }
+  .ctl.off { opacity: .4; pointer-events: none; }
+  .cache { display: none !important; }
+  .ro { margin-top: 8px; min-height: 2.9em; }
+</style>
+</head>
+<body>
+<div class="controls" id="ctl"></div>
+<div class="controls" id="ctl2"></div>
+<div class="row" id="tis" style="margin-bottom:8px"></div>
+<div class="grid2">
+  <div class="card">
+    <h4 id="h3d">Aimantation après une impulsion de 90°</h4>
+    <div class="plot" id="v3d"></div>
+    <div class="note">Glisser pour tourner la vue. Le plan pointillé est le plan transverse (x, y).</div>
+  </div>
+  <div class="card">
+    <h4>Composante transverse M<sub>xy</sub>(t) — décroissance T₂</h4>
+    <div class="plot" id="pxy"></div>
+    <h4 style="margin-top:6px">Composante longitudinale M<sub>z</sub>(t) — repousse T₁</h4>
+    <div class="plot" id="pz"></div>
+  </div>
+</div>
+<div class="readout ro" id="ro"></div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script>
+(function () {
+  const T = MRI.T;
+  const TMAX = 6000;                 // ms, fin de l'axe en mode « une impulsion »
+  const NCYC = 4;                    // cycles affichés en mode « impulsions répétées »
+  const FLIP = 0.7;                  // s réelles pour l'animation d'une impulsion
+  const S = { mode: "une", t: 1, TR: 500, TE: 15, prec: false,
+    sel: { sb: true, sg: true, lcr: true, gr: true, les: false, mu: false } };
+  let flip = null;                   // impulsion en train de basculer {k, p}
+  let faits = -1;                    // indice de la dernière impulsion jouée
+  const rep = () => S.mode === "rep";
+  const tFin = () => NCYC * S.TR;
+
+  // ------------------------------------------------------------ impulsions répétées
+  // Un 90° tous les TR. Juste avant chaque impulsion le reste transverse est effacé (spoiling).
+  const avant = (id, k) => (k === 0 ? 1 : 1 - Math.exp(-S.TR / T[id].T1));   // Mz juste avant l'impulsion k
+  const reste = (id, k) => (k === 0 ? 0 : MRI.mxy(S.TR, T[id].T2, avant(id, k - 1)));
+  function cycle(t) {
+    const k = Math.min(NCYC - 1, Math.max(0, Math.floor(t / S.TR + 1e-9)));
+    return [k, t - k * S.TR];
+  }
+  const repMz = (id, t) => MRI.mz(cycle(t)[1], T[id].T1, 0);
+  const repMxy = (id, t) => { const [k, d] = cycle(t); return MRI.mxy(d, T[id].T2, avant(id, k)); };
+  // indice de l'impulsion qui tombe à l'instant t et n'a pas encore été jouée, sinon -1
+  function enAttente(t) {
+    const k = Math.round(t / S.TR);
+    return k < NCYC && Math.abs(t - k * S.TR) < 1e-6 && faits < k ? k : -1;
+  }
+  // [Mxy, Mz] affichés à l'instant t
+  function val(id, t) {
+    if (!rep()) return [MRI.mxy(t, T[id].T2), MRI.mz(t, T[id].T1, 0)];
+    const k = flip ? flip.k : enAttente(t);
+    if (k >= 0) {
+      const a = flip ? flip.p * Math.PI / 2 : 0, m = avant(id, k);
+      return [m * Math.sin(a), m * Math.cos(a)];
+    }
+    return [repMxy(id, t), repMz(id, t)];
+  }
+  function M(id, t) {
+    const [mxy, mz] = val(id, t);
+    let v = [0, -mxy, mz];
+    if (S.prec) v = MRI.rotZ(v, -2 * Math.PI * t / 250);   // 1 tour / 250 ms : purement visuel
+    return v;
+  }
+
+  // ------------------------------------------------------------ contrôles
+  const anim = new UI.Anim(pas);
+  function pas(dt) {
+    if (!rep()) {
+      // temps « logarithmique » : l'animation traverse vite les secondes et lentement les premières ms
+      S.t = Math.max(1, S.t) * Math.exp(dt * 1.15);
+      if (S.t >= TMAX) { S.t = TMAX; majT(); redraw(); return false; }
+      majT(); redraw(); return;
+    }
+    if (flip) {
+      flip.p += dt / FLIP;
+      if (flip.p >= 1) { faits = flip.k; flip = null; }
+      redraw(); return;
+    }
+    const kn = faits + 1, tp = kn * S.TR;
+    if (kn < NCYC && S.t >= tp - 1e-9) { S.t = tp; flip = { k: kn, p: 0 }; majT(); redraw(); return; }
+    let nt = S.t + dt * tFin() / 9;
+    if (kn < NCYC && nt >= tp) { nt = tp; flip = { k: kn, p: 0 }; }
+    S.t = Math.min(nt, tFin());
+    majT(); redraw();
+    if (S.t >= tFin() && !flip) return false;
+  }
+
+  const segMode = UI.seg("#ctl", { value: S.mode, options: [["une", "Une impulsion"], ["rep", "Impulsions répétées"]], onChange: (v) => {
+    anim.pause(); S.mode = v; flip = null; faits = -1; S.t = v === "rep" ? 0 : 1; majMode(); } });
+  const bx = UI.el("div", { class: "row", style: "gap:6px;align-items:flex-end" });
+  UI.$("#ctl").appendChild(bx);
+  UI.playButton(bx, anim);
+  const bRaz = UI.button(bx, "↺ 90°", () => { anim.pause(); flip = null; faits = -1; S.t = rep() ? 0 : 1; majT(); redraw(); });
+  UI.check(bx, { label: "précession (ralentie)", value: false, onChange: (v) => { S.prec = v; redraw(); } });
+
+  const tLog = UI.slider("#ctl2", { label: "Temps après l'impulsion", min: 1, max: TMAX, log: true, value: 1, unit: "ms",
+    fmt: (v) => UI.fmt(v, v < 10 ? 1 : 0), onInput: (v) => { anim.pause(); S.t = v; redraw(); } });
+  const tLin = UI.slider("#ctl2", { label: "Temps", min: 0, max: tFin(), step: 1, value: 0, unit: "ms",
+    fmt: (v) => UI.fmt(v, 0), onInput: (v) => { anim.pause(); flip = null; S.t = v; recaler(); redraw(); } });
+  const sTR = UI.slider("#ctl2", { label: "TR (entre deux impulsions)", min: 250, max: 3000, step: 10, value: S.TR, unit: "ms",
+    fmt: (v) => UI.fmt(v, 0), onInput: (v) => { const r = S.t / S.TR; S.TR = v; S.t = r * v; flip = null; recaler(); majAxes(); majT(); redraw(); } });
+  const sTE = UI.slider("#ctl2", { label: "TE (impulsion → mesure)", min: 5, max: 200, step: 1, value: S.TE, unit: "ms",
+    fmt: (v) => UI.fmt(v, 0), onInput: (v) => { S.TE = v; redraw(); } });
+  // après un déplacement à la main, les impulsions déjà passées comptent comme jouées
+  function recaler() {
+    const k = Math.floor(S.t / S.TR + 1e-9);
+    faits = Math.min(NCYC - 1, Math.abs(S.t - k * S.TR) < 1e-6 ? k - 1 : k);
+  }
+  function majT() { (rep() ? tLin : tLog).set(S.t, true); }
+
+  const checks = {};
+  MRI.ids.forEach((id) => {
+    checks[id] = UI.check("#tis", { label: `${T[id].nom} <span class="note">(T₁ ${T[id].T1}, T₂ ${T[id].T2} ms)</span>`,
+      value: S.sel[id], color: UI.tcolor(id), onChange: (v) => { S.sel[id] = v; redraw(); } });
+  });
+  UI.onTheme(() => MRI.ids.forEach((id) => { checks[id].swatch.style.background = UI.tcolor(id); }));
+  const ids = () => MRI.ids.filter((id) => S.sel[id]);
+
+  // ------------------------------------------------------------ vue 3D
+  const c3 = UI.canvas("#v3d", draw3d);
+  const view = new UI.View3D(c3, { az: -125, el: 20 });
+  function draw3d(ctx, w, h) {
+    view.begin(ctx, w, h).axes({ b0: true });
+    ids().forEach((id) => {
+      const col = UI.tcolor(id), pts = [], n = 160;
+      if (!rep()) {
+        for (let i = 0; i <= n; i++) pts.push(M(id, Math.pow(Math.max(S.t, 1.0001), i / n)));
+      } else if (!flip && enAttente(S.t) < 0) {
+        const k = cycle(S.t)[0], t0 = k * S.TR;
+        for (let i = 0; i <= n; i++) pts.push(M(id, t0 + 1e-6 + (S.t - t0) * i / n));
+      }
+      if (pts.length) view.path(pts, col, 1.3, 0.55);
+      // pendant une impulsion : le reste transverse effacé par le spoiling s'estompe
+      if (flip && flip.k > 0) {
+        const r = reste(id, flip.k);
+        if (r > 0.02) {
+          let g = [0, -r, avant(id, flip.k)];
+          if (S.prec) g = MRI.rotZ(g, -2 * Math.PI * S.t / 250);
+          view.vec(g, col, 1.6, 7, Math.max(0, 0.6 * (1 - 2.5 * flip.p)));
+        }
+      }
+      view.vec(M(id, S.t), col, 2.6, 9);
+    });
+    let lab = "t = " + UI.fmt(S.t, S.t < 10 ? 1 : 0) + " ms";
+    if (rep()) lab = flip ? `impulsion 90° n°${flip.k + 1}` : `cycle ${cycle(S.t)[0] + 1} · ` + lab;
+    UI.text(ctx, lab, 10, 14, { color: UI.css("--ink"), size: 13, weight: "600" });
+  }
+
+  // ------------------------------------------------------------ courbes
+  const fxy = (id) => (rep() ? (t) => repMxy(id, t) : (t) => MRI.mxy(t, T[id].T2));
+  const fz = (id) => (rep() ? (t) => repMz(id, t) : (t) => MRI.mz(t, T[id].T1, 0));
+  const series = (key) => ids().map((id) => ({ name: T[id].court, color: UI.tcolor(id), f: key === "xy" ? fxy(id) : fz(id) }));
+  const pad = { l: 46, r: 38, t: 8, b: 34 };
+  const cxy = UI.canvas("#pxy", (ctx, w, h) => plotOne(pxy, ctx, w, h, "xy"));
+  const pxy = new UI.Plot(cxy, { x: { min: 0, max: 400, label: "t (ms)" }, y: { min: 0, max: 1, label: "Mxy / M₀", ticks: [0, 0.5, 1] }, pad });
+  pxy.hoverable(cxy, () => series("xy"), { xName: "t (ms)", x: (v) => UI.fmt(v, 0), y: (v) => UI.fmt(v, 2) });
+  const cz = UI.canvas("#pz", (ctx, w, h) => plotOne(pz, ctx, w, h, "z"));
+  const pz = new UI.Plot(cz, { x: { min: 0, max: TMAX, label: "t (ms)" }, y: { min: 0, max: 1, label: "Mz / M₀", ticks: [0, 0.5, 1] }, pad });
+  pz.hoverable(cz, () => series("z"), { xName: "t (ms)", x: (v) => UI.fmt(v, 0), y: (v) => UI.fmt(v, 2) });
+  function majAxes() {
+    if (rep()) {
+      pxy.x = { min: 0, max: tFin(), label: "t (ms)" };
+      pz.x = { min: 0, max: tFin(), label: "t (ms)" };
+    } else {
+      pxy.x = { min: 0, max: 400, label: "t (ms)" };
+      pz.x = { min: 0, max: TMAX, label: "t (ms)" };
+    }
+    tLin.input.max = tFin(); tLin.input.step = tFin() / 1000;
+  }
+
+  function plotOne(p, ctx, w, h, key) {
+    p.frame(ctx, w, h);
+    const ser = series(key);
+    if (!rep()) {
+      ser.forEach((s) => p.func(s.f, { color: s.color, width: 2 }));
+      // repères T2 (ou T1) : 37 % (= e^-1) atteint à t = T
+      if (key === "xy") p.hline(Math.exp(-1), { color: UI.css("--muted"), dash: [3, 4], width: 1, label: "e⁻¹ ≈ 0,37 → t = T₂" });
+      else p.hline(1 - Math.exp(-1), { color: UI.css("--muted"), dash: [3, 4], width: 1, label: "1 − e⁻¹ ≈ 0,63 → t = T₁", labelDy: 9 });
+    } else {
+      for (let k = 0; k < NCYC; k++) p.vline(k * S.TR, { color: UI.css("--rf"), dash: [4, 4], width: 1, label: "90°", labelColor: UI.css("--rf") });
+      ids().forEach((id) => {
+        const col = UI.tcolor(id);
+        for (let k = 0; k < NCYC; k++) {
+          const t0 = k * S.TR, xs = [], ys = [];
+          for (let i = 0; i <= 120; i++) { const tt = t0 + S.TR * i / 120; xs.push(tt); ys.push(key === "xy" ? MRI.mxy(tt - t0, T[id].T2, avant(id, k)) : MRI.mz(tt - t0, T[id].T1, 0)); }
+          // saut à l'impulsion : Mz tombe à 0, Mxy repart de ce qui a été basculé
+          if (key === "xy") p.line([t0, t0], [reste(id, k), avant(id, k)], { color: col, width: 1, dash: [2, 3] });
+          else p.line([t0, t0], [avant(id, k), 0], { color: col, width: 1, dash: [2, 3] });
+          p.line(xs, ys, { color: col, width: 2 });
+          if (key === "z") p.dot(t0 + S.TR, avant(id, k + 1), { color: col, r: 3.5 });
+          else if (S.TE < S.TR) p.dot(t0 + S.TE, MRI.mxy(S.TE, T[id].T2, avant(id, k)), { color: col, r: 3.5 });
+        }
+      });
+    }
+    p.endLabels(ser, p.x.max);
+    if (S.t <= p.x.max) {
+      p.vline(S.t, { color: UI.css("--ink"), width: 1.2 });
+      ids().forEach((id) => { const v = val(id, S.t); p.dot(S.t, key === "xy" ? v[0] : v[1], { color: UI.tcolor(id), r: 4 }); });
+    }
+    p.drawHover();
+  }
+
+  // ------------------------------------------------------------ texte
+  function readout() {
+    const el = UI.$("#ro");
+    if (!rep()) {
+      el.innerHTML = "Une seule impulsion de 90° à t = 0 : M<sub>xy</sub> s'éteint en T₂ et M<sub>z</sub> repousse vers M₀ en T₁. " +
+        "Passez en « Impulsions répétées » pour enchaîner un 90° tous les TR, comme dans une vraie séquence.";
+      return;
+    }
+    const liste = (f) => ids().map((id) => `${T[id].court} ${UI.fmt(f(id), 2)}`).join(" · ");
+    const E = (id) => 1 - Math.exp(-S.TR / T[id].T1);
+    el.innerHTML = `Basculé à chaque impulsion : la 1<sup>re</sup> impulsion part de l'équilibre (1,00 pour tous), puis à chaque cycle ${liste(E)}. ` +
+      `Mesuré à TE = ${UI.fmt(S.TE, 0)}&nbsp;ms : ${liste((id) => E(id) * Math.exp(-S.TE / T[id].T2))}. ` +
+      "Le reste transverse est effacé juste avant chaque impulsion (spoiling).";
+  }
+
+  function majMode() {
+    tLog.el.classList.toggle("cache", rep());
+    tLin.el.classList.toggle("cache", !rep());
+    sTR.el.classList.toggle("off", !rep());
+    sTE.el.classList.toggle("off", !rep());
+    sTR.input.disabled = sTE.input.disabled = !rep();
+    UI.$("#h3d").textContent = rep() ? "Aimantation, un 90° tous les TR" : "Aimantation après une impulsion de 90°";
+    bRaz.textContent = rep() ? "↺ début" : "↺ 90°";
+    majAxes(); majT(); redraw();
+  }
+  function redraw() { c3.redraw(); cxy.redraw(); cz.redraw(); readout(); }
+  majMode();
+
+  // accès pour les captures (outils/captures.py)
+  window.__etat = (o) => {
+    anim.pause(); flip = null;
+    if (o.TR) { S.TR = o.TR; sTR.set(o.TR, true); }
+    if (o.TE) { S.TE = o.TE; sTE.set(o.TE, true); }
+    if (o.mode) { S.mode = o.mode; segMode.set(o.mode, true); }
+    S.t = o.t; recaler(); majMode();
+  };
+})();
+</script>
+</body>
+</html>

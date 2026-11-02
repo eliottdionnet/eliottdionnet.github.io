@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Écho de spin rapide : train d'échos et TE effectif</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  .pl { height: 280px; }
+  .ro { margin-top: 8px; min-height: 2.9em; }
+</style>
+</head>
+<body>
+<div class="controls" id="ctl"></div>
+<div class="grid3">
+  <div class="card"><h4>Train d'échos après un 90°</h4><div class="plot pl" id="ptr"></div></div>
+  <div class="card"><h4>Espace des k : qui remplit quoi</h4><div class="plot pl" id="pk"></div></div>
+  <div class="card"><h4 id="hi">Image reconstruite</h4><div class="plot pl" id="pim"></div></div>
+</div>
+<div class="readout ro" id="ro"></div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script src="data/cerveau.js"></script>
+<script>
+(function () {
+  const TR = 4000, NL = 256, N = 256;            // ms, lignes de l'image (TR × NL = durée), taille FFT
+  const P = { ETL: 8, ESP: 12, nc: 7 };
+  const SHOW = ["sb", "sg", "lcr"];
+
+  // ------------------------------------------------------------ contrôles
+  const sETL = UI.slider("#ctl", { label: "Longueur de train (ETL)", min: 1, max: 16, step: 1, value: P.ETL, fmt: (v) => UI.fmt(v, 0),
+    onInput: (v) => { P.ETL = v; P.nc = Math.min(P.nc, v); sNc.input.max = v; sNc.set(P.nc, true); redraw(); } });
+  const sESP = UI.slider("#ctl", { label: "Espacement des échos (ESP)", min: 8, max: 20, step: 1, value: P.ESP, unit: "ms", fmt: (v) => UI.fmt(v, 0),
+    onInput: (v) => { P.ESP = v; redraw(); } });
+  const sNc = UI.slider("#ctl", { label: "Écho placé au centre", min: 1, max: P.ETL, step: 1, value: P.nc, fmt: (v) => "n° " + UI.fmt(v, 0),
+    onInput: (v) => { P.nc = v; redraw(); } });
+
+  // une couleur par écho, du clair (écho précoce) au foncé (écho tardif)
+  function couleur(n) {
+    const t = P.ETL > 1 ? (n - 1) / (P.ETL - 1) : 0;
+    const a = [237, 161, 0], b = [74, 58, 167];   // jaune → violet
+    const c = a.map((v, i) => Math.round(v + (b[i] - v) * t));
+    return `rgb(${c.join(",")})`;
+  }
+
+  // bande de l'espace des k → écho. Bande centrale = écho choisi, puis on s'éloigne des deux côtés.
+  function attribution() {
+    const E = P.ETL, bc = Math.floor(E / 2);
+    const bandes = Array.from({ length: E }, (_, b) => b).sort((x, y) => Math.abs(x - bc) - Math.abs(y - bc) || x - y);
+    const echos = Array.from({ length: E }, (_, k) => k + 1).sort((x, y) => Math.abs(x - P.nc) - Math.abs(y - P.nc) || y - x);
+    const m = new Array(E);
+    bandes.forEach((b, i) => { m[b] = echos[i]; });
+    return m;                                  // m[bande] = n° d'écho
+  }
+  const bandeDe = (ky) => Math.min(P.ETL - 1, Math.floor((ky + N / 2) * P.ETL / N));   // ky ∈ [−N/2, N/2[
+
+  // ------------------------------------------------------------ FFT (radix 2, en place)
+  function fft(re, im, inv) {
+    const n = re.length;
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit;
+      if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const ang = (inv ? 2 : -2) * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
+      for (let i = 0; i < n; i += len) {
+        let cr = 1, ci = 0;
+        for (let k = 0; k < len / 2; k++) {
+          const ar = re[i + k], ai = im[i + k], br = re[i + k + len / 2] * cr - im[i + k + len / 2] * ci, bi = re[i + k + len / 2] * ci + im[i + k + len / 2] * cr;
+          re[i + k] = ar + br; im[i + k] = ai + bi; re[i + k + len / 2] = ar - br; im[i + k + len / 2] = ai - bi;
+          const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+        }
+      }
+    }
+    if (inv) for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+  }
+
+  // Transformée selon y (direction du codage de phase) des cartes de fraction de chaque tissu.
+  // L'image d'un écho est Σ S_k f_k, donc son espace des k est Σ S_k F_k : on ne transforme qu'une fois.
+  const F = MRI.cerveau(), W = F.w, H = F.h, y0 = Math.floor((N - H) / 2);
+  const KF = {};
+  MRI.ids.forEach((k) => {
+    const re = new Float32Array(N * W), im = new Float32Array(N * W);
+    const cr = new Float64Array(N), ci = new Float64Array(N);
+    for (let x = 0; x < W; x++) {
+      cr.fill(0); ci.fill(0);
+      for (let y = 0; y < H; y++) cr[y0 + y] = F.f[k][y * W + x];
+      fft(cr, ci, false);
+      for (let j = 0; j < N; j++) { re[j * W + x] = cr[j]; im[j * W + x] = ci[j]; }
+    }
+    KF[k] = { re, im };
+  });
+
+  function image() {
+    const m = attribution(), out = new Float32Array(W * H);
+    // signal de chaque tissu à chaque écho (écho de spin, TR long)
+    const S = {};
+    MRI.ids.forEach((k) => { S[k] = []; for (let n = 1; n <= P.ETL; n++) S[k][n] = MRI.se(MRI.T[k], TR, n * P.ESP); });
+    const cr = new Float64Array(N), ci = new Float64Array(N);
+    for (let x = 0; x < W; x++) {
+      for (let j = 0; j < N; j++) {
+        const ky = j < N / 2 ? j : j - N, n = m[bandeDe(ky)];
+        let r = 0, q = 0;
+        for (const k of MRI.ids) { r += S[k][n] * KF[k].re[j * W + x]; q += S[k][n] * KF[k].im[j * W + x]; }
+        cr[j] = r; ci[j] = q;
+      }
+      fft(cr, ci, true);
+      for (let y = 0; y < H; y++) out[y * W + x] = Math.hypot(cr[y0 + y], ci[y0 + y]) + 0.004 * Math.abs(F.nr[y * W + x]);
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------ train d'échos
+  const ctr = UI.canvas("#ptr", (ctx, w, h) => {
+    const tmax = (P.ETL + 0.6) * P.ESP;
+    ptr.x = { min: 0, max: tmax, label: "t (ms)" };
+    ptr.frame(ctx, w, h);
+    for (let n = 1; n <= P.ETL; n++) {
+      const t = n * P.ESP, on = n === P.nc;
+      ptr.vline(t, { color: couleur(n), width: on ? 3 : 2 });
+      ptr.vline(t - P.ESP / 2, { color: UI.css("--rf"), dash: [1, 4], width: 0.8 });
+    }
+    SHOW.forEach((k) => ptr.func((t) => MRI.se(MRI.T[k], TR, t), { color: UI.tcolor(k), width: 2 }));
+    ptr.endLabels(SHOW.map((k) => ({ name: MRI.T[k].court, f: (t) => MRI.se(MRI.T[k], TR, t) })), tmax);
+    const te = P.nc * P.ESP;
+    ptr.label(te, 0.95, "TE eff = " + UI.fmt(te, 0) + " ms", { align: te > tmax * 0.6 ? "right" : "left", dx: te > tmax * 0.6 ? -6 : 6, color: couleur(P.nc), weight: "600", box: true });
+  });
+  const ptr = new UI.Plot(ctr, { x: { min: 0, max: 100 }, y: { min: 0, max: 1, label: "signal / M₀", ticks: [0, 0.5, 1] }, pad: { l: 46, r: 40, t: 8, b: 34 } });
+
+  // ------------------------------------------------------------ espace des k
+  const ck = UI.canvas("#pk", (ctx, w, h) => {
+    const m = attribution(), L = 50, R = w - 10, T = 8, B = h - 26, hb = (B - T) / P.ETL;
+    for (let b = 0; b < P.ETL; b++) {
+      const n = m[b], y = T + b * hb;
+      ctx.fillStyle = couleur(n); ctx.globalAlpha = n === P.nc ? 0.95 : 0.6;
+      ctx.fillRect(L, y, R - L, hb); ctx.globalAlpha = 1;
+      // quelques lignes horizontales pour évoquer les lignes de l'espace des k
+      ctx.strokeStyle = UI.css("--panel"); ctx.lineWidth = 0.6; ctx.globalAlpha = 0.5;
+      const nl = Math.max(1, Math.round(64 / P.ETL));
+      for (let i = 1; i < nl; i++) { const yy = y + hb * i / nl; ctx.beginPath(); ctx.moveTo(L, yy); ctx.lineTo(R, yy); ctx.stroke(); }
+      ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = UI.css("--border"); ctx.strokeRect(L, T, R - L, B - T);
+    const yc = T + (B - T) / 2;
+    // noms des bandes ; la ligne k = 0 s'interrompt autour d'un nom qu'elle traverserait
+    const sz = hb > 20 ? 12 : 10.5, xm = (L + R) / 2;
+    let trou = 0;
+    if (hb > 13) for (let b = 0; b < P.ETL; b++) {
+      const yt = T + b * hb + hb / 2, s = "écho " + m[b];
+      UI.text(ctx, s, xm, yt, { align: "center", color: "#fff", size: sz, weight: "600" });
+      if (Math.abs(yt - yc) < sz * 0.6) trou = ctx.measureText(s).width / 2 + 6;
+    }
+    ctx.strokeStyle = UI.css("--ink"); ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    if (trou) { ctx.moveTo(L - 6, yc); ctx.lineTo(xm - trou, yc); ctx.moveTo(xm + trou, yc); ctx.lineTo(R, yc); }
+    else { ctx.moveTo(L - 6, yc); ctx.lineTo(R, yc); }
+    ctx.stroke(); ctx.setLineDash([]);
+    UI.text(ctx, "k = 0", L - 4, yc, { align: "right", color: UI.css("--ink"), size: 10.5, weight: "600" });
+    UI.text(ctx, "+kₘₐₓ", L - 4, T + 6, { align: "right", color: UI.css("--muted"), size: 10.5 });
+    UI.text(ctx, "−kₘₐₓ", L - 4, B - 6, { align: "right", color: UI.css("--muted"), size: 10.5 });
+    UI.text(ctx, "centre : contraste · bords : détails", (L + R) / 2, B + 14, { align: "center", color: UI.css("--ink2"), size: 11 });
+  });
+
+  // ------------------------------------------------------------ image
+  let IMG = null;
+  const cim = UI.canvas("#pim", (ctx, w, h) => {
+    if (!IMG) return;
+    MRI.dessiner(ctx, IMG, { x: 0, y: 0, w, h }, { lo: 0, hi: MRI.fenetre(IMG), sub: `TR ${TR} ms · ETL ${P.ETL} · ESP ${P.ESP} ms` });
+  });
+
+  function readout() {
+    const te = P.nc * P.ESP, nTR = Math.ceil(NL / P.ETL), dur = nTR * TR / 1000, ref = NL * TR / 1000;
+    const mmss = (s) => `${Math.floor(s / 60)} min ${String(Math.round(s % 60)).padStart(2, "0")} s`;
+    UI.$("#ro").innerHTML = `TE effectif = écho ${P.nc} × ${P.ESP} ms = ${te} ms. ` +
+      `${NL} lignes en ${nTR} TR au lieu de ${NL} : ${mmss(dur)} au lieu de ${mmss(ref)} en écho de spin classique.`;
+    UI.$("#hi").textContent = `Image obtenue, TE eff = ${te} ms`;
+  }
+
+  function redraw() { IMG = image(); ctr.redraw(); ck.redraw(); cim.redraw(); readout(); }
+  redraw();
+
+  // accès pour les captures (outils/captures.py)
+  window.__etat = (o) => { Object.assign(P, o); sETL.set(P.ETL, true); sESP.set(P.ESP, true); sNc.input.max = P.ETL; sNc.set(P.nc, true); redraw(); };
+})();
+</script>
+</body>
+</html>

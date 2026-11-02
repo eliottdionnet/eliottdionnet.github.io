@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IRM virtuelle</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #im { height: 430px; }
+  #map { height: 220px; }
+  #bars { height: 176px; }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; align-items: center; }
+</style>
+</head>
+<body>
+<div class="presets" id="pre"><span class="note" style="margin-right:4px">Préréglages :</span></div>
+<div class="controls" id="ctl"></div>
+<div class="grid2" style="grid-template-columns: 5fr 4fr">
+  <div class="card">
+    <div class="plot" id="im"></div>
+    <div class="readout" id="ro"></div>
+  </div>
+  <div class="card">
+    <h4>Tableau TR × TE (cliquer / glisser)</h4>
+    <div class="plot" id="map"></div>
+    <h4 style="margin-top:6px">Signal de chaque tissu</h4>
+    <div class="plot" id="bars"></div>
+  </div>
+</div>
+<script src="lib/ui.js"></script>
+<script src="lib/tissus.js"></script>
+<script src="lib/mri.js"></script>
+<script src="data/cerveau.js"></script>
+<script>
+(function () {
+  const P = { seq: "SE", TR: 500, TE: 15, alpha: 20, TI: 2400, noise: true, psir: false };
+  const IDS = MRI.ids;
+  const PRESETS = [
+    ["T1w", { seq: "SE", TR: 500, TE: 15 }],
+    ["DPw", { seq: "SE", TR: 3000, TE: 15 }],
+    ["T2w", { seq: "SE", TR: 4000, TE: 100 }],
+    ["T1w (EG)", { seq: "GRE", TR: 20, TE: 3, alpha: 25 }],
+    ["T2*w (EG)", { seq: "GRE", TR: 600, TE: 25, alpha: 20 }],
+    ["FLAIR", { seq: "IR", TR: 10000, TE: 120, TI: Math.round(MRI.tiNull(MRI.T.lcr.T1, 10000)) }],
+    ["STIR", { seq: "IR", TR: 4000, TE: 40, TI: Math.round(MRI.tiNull(MRI.T.gr.T1, 4000)) }],
+  ];
+  PRESETS.forEach(([n, p]) => UI.button("#pre", n, () => { Object.assign(P, p); sync(); }));
+
+  const seqS = UI.seg("#ctl", { label: "Séquence", value: P.seq, options: [["SE", "Écho de spin"], ["GRE", "Écho de gradient"], ["IR", "Inversion-récup."]], onChange: (v) => { P.seq = v; sync(); } });
+  const nice = (v) => (v < 100 ? Math.round(v) : v < 1000 ? Math.round(v / 5) * 5 : Math.round(v / 50) * 50);
+  const trS = UI.slider("#ctl", { label: "TR", min: 10, max: 10000, log: true, round: nice, value: P.TR, unit: "ms", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.TR = v; fixTI(); draw(); } });
+  const teS = UI.slider("#ctl", { label: "TE", min: 1, max: 250, step: 1, value: P.TE, unit: "ms", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.TE = v; draw(); } });
+  const aS = UI.slider("#ctl", { label: "Angle α", min: 1, max: 90, step: 1, value: P.alpha, unit: "°", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.alpha = v; draw(); } });
+  const tiS = UI.slider("#ctl", { label: "TI", min: 20, max: 4000, log: true, round: nice, value: P.TI, unit: "ms", fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.TI = v; draw(); } });
+  const opts = UI.el("div", { class: "row", style: "gap:12px;align-items:center;flex:0 0 auto" }); UI.$("#ctl").appendChild(opts);
+  UI.check(opts, { label: "bruit", value: P.noise, onChange: (v) => { P.noise = v; draw(); } });
+  const psS = UI.check(opts, { label: "PSIR (signe conservé)", value: P.psir, onChange: (v) => { P.psir = v; draw(); } });
+
+  function fixTI() { if (P.TI > P.TR - 20) P.TI = Math.max(20, P.TR - 20); tiS.set(P.TI, true); }
+  function sync() {
+    seqS.set(P.seq, true); trS.set(P.TR, true); teS.set(P.TE, true); aS.set(P.alpha, true); fixTI();
+    aS.el.style.display = P.seq === "GRE" ? "" : "none";
+    tiS.el.style.display = P.seq === "IR" ? "" : "none";
+    psS.el.style.display = P.seq === "IR" ? "" : "none";
+    draw();
+  }
+  const tissueSignal = (id) => {
+    const t = MRI.T[id];
+    if (P.seq === "GRE") return MRI.spgr(t, P.TR, P.TE, P.alpha);
+    if (P.seq === "IR") { const s = MRI.ir(t, P.TR, P.TE, P.TI); return P.psir ? s : Math.abs(s); }
+    return MRI.se(t, P.TR, P.TE);
+  };
+
+  // ---------------------------------------------------------------- image
+  const ci = UI.canvas("#im", (ctx, w, h) => {
+    const r = MRI.simuler({ seq: P.seq, TR: P.TR, TE: P.TE, alpha: P.alpha, TI: P.TI, noise: P.noise ? 0.006 : 0 });
+    let data = r.mag, lo = 0, hi = MRI.fenetre(r.mag);
+    if (P.seq === "IR" && P.psir) {
+      // Reconstruction sensible à la phase : on garde le signe de la partie réelle
+      data = new Float32Array(r.re.length);
+      for (let i = 0; i < data.length; i++) data[i] = Math.sign(r.re[i]) * r.mag[i];
+      hi = MRI.fenetre(r.mag); lo = -hi;
+    }
+    const nom = P.seq === "SE" ? "Écho de spin" : P.seq === "GRE" ? "Écho de gradient" : "Inversion-récupération";
+    let sub = `TR ${UI.fmt(P.TR, 0)} · TE ${UI.fmt(P.TE, 0)} ms`;
+    if (P.seq === "GRE") sub += ` · α ${P.alpha}°`;
+    if (P.seq === "IR") sub += ` · TI ${UI.fmt(P.TI, 0)} ms` + (P.psir ? " · PSIR (noir = négatif)" : " · magnitude");
+    MRI.dessiner(ctx, data, { x: 0, y: 0, w, h }, { lo, hi, label: nom, sub });
+  });
+
+  // ------------------------------------------------------------ carte TR×TE
+  const cm = UI.canvas("#map", (ctx, w, h) => {
+    pm.frame(ctx, w, h);
+    const zone = (x0, x1, y0, y1, lab, col) => {
+      const X0 = pm.X(x0), X1 = pm.X(x1), Y0 = pm.Y(y0), Y1 = pm.Y(y1);
+      ctx.fillStyle = col; ctx.globalAlpha = 0.16; ctx.fillRect(X0, Y1, X1 - X0, Y0 - Y1); ctx.globalAlpha = 1;
+      UI.text(ctx, lab, (X0 + X1) / 2, (Y0 + Y1) / 2, { align: "center", color: UI.css("--ink"), size: 12, weight: "600", halo: true });
+    };
+    zone(10, 800, 0, 30, "T1w", UI.tcolor("sb"));
+    zone(2000, 10000, 0, 30, "DPw", UI.tcolor("sg"));
+    zone(2000, 10000, 70, 250, "T2w", UI.tcolor("lcr"));
+    zone(10, 800, 70, 250, "signal faible (à éviter)", UI.css("--muted"));
+    pm.dot(P.TR, P.TE, { color: UI.css("--ink"), r: 6 });
+  });
+  const pm = new UI.Plot(cm, { x: { min: 10, max: 10000, log: true, label: "TR (ms)", fmt: (v) => UI.fmt(v, 0) }, y: { min: 0, max: 250, label: "TE (ms)", ticks: [0, 50, 100, 150, 200, 250] }, pad: { l: 46, r: 22, t: 8, b: 36 } });
+  let drag = false;
+  const pick = (ev) => {
+    const r = cm.cv.getBoundingClientRect(), px = ev.clientX - r.left, py = ev.clientY - r.top;
+    P.TR = UI.clamp(pm.invX(UI.clamp(px, pm.L, pm.R)), 10, 10000);
+    P.TE = Math.round(UI.clamp(250 * (pm.B - py) / (pm.B - pm.T), 1, 250));
+    trS.set(P.TR, true); teS.set(P.TE, true); fixTI(); draw();
+  };
+  cm.cv.style.cursor = "crosshair";
+  cm.cv.addEventListener("pointerdown", (e) => { drag = true; cm.cv.setPointerCapture(e.pointerId); pick(e); });
+  cm.cv.addEventListener("pointermove", (e) => { if (drag) pick(e); });
+  cm.cv.addEventListener("pointerup", () => { drag = false; });
+
+  // ---------------------------------------------------------- barres tissus
+  const cb = UI.canvas("#bars", (ctx, w, h) => {
+    const vals = IDS.map((id) => tissueSignal(id));
+    const m = Math.max(1e-6, ...vals.map(Math.abs));
+    const neg = vals.some((v) => v < 0);
+    const L = 64, R = w - 50, rowH = (h - 6) / IDS.length, x0 = neg ? (L + R) / 2 : L;
+    const sc = (R - L) / (neg ? 2 : 1) / m;
+    ctx.strokeStyle = UI.css("--axis"); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(Math.round(x0) + 0.5, 2); ctx.lineTo(Math.round(x0) + 0.5, h - 2); ctx.stroke();
+    IDS.forEach((id, i) => {
+      const y = 3 + i * rowH, v = vals[i], bw = v * sc;
+      UI.text(ctx, MRI.T[id].court, 6, y + rowH / 2, { color: UI.css("--ink2"), size: 12 });
+      ctx.fillStyle = UI.tcolor(id);
+      const bx = bw >= 0 ? x0 : x0 + bw, ww = Math.max(1, Math.abs(bw));
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, y + 4, ww, rowH - 8, 4) : ctx.rect(bx, y + 4, ww, rowH - 8); ctx.fill();
+      UI.text(ctx, UI.fmt(v, 3), bw >= 0 ? x0 + bw + 5 : x0 + bw - 5, y + rowH / 2, { color: UI.css("--ink"), size: 11.5, align: bw >= 0 ? "left" : "right" });
+    });
+  });
+
+  function draw() {
+    ci.redraw(); cm.redraw(); cb.redraw();
+    const f = P.seq === "SE" ? "S = DP (1 − e<sup>−TR/T₁</sup>) e<sup>−TE/T₂</sup>"
+      : P.seq === "GRE" ? "S = DP sin α (1 − E₁)/(1 − cos α E₁) e<sup>−TE/T₂*</sup>"
+      : "S = DP (1 − 2e<sup>−TI/T₁</sup> + e<sup>−TR/T₁</sup>) e<sup>−TE/T₂</sup>";
+    let extra = "";
+    if (P.seq === "IR") extra = ` · TI d'annulation : LCR ${UI.fmt(MRI.tiNull(MRI.T.lcr.T1, P.TR), 0)}, graisse ${UI.fmt(MRI.tiNull(MRI.T.gr.T1, P.TR), 0)}, SB ${UI.fmt(MRI.tiNull(MRI.T.sb.T1, P.TR), 0)}&nbsp;ms`;
+    if (P.seq === "GRE") extra = ` · angle d'Ernst SB : ${UI.fmt(MRI.ernst(P.TR, MRI.T.sb.T1), 0)}°`;
+    UI.$("#ro").innerHTML = f + extra;
+  }
+  sync();
+  window.__preset = (i) => { Object.assign(P, PRESETS[i][1]); sync(); };
+})();
+</script>
+</body>
+</html>

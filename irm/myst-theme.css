@@ -1,0 +1,186 @@
+/* User Provided Stylesheet */
+
+/* ==========================================================================
+   Feuille générée par outils/hauteurs.py — ne pas modifier à la main.
+   Neutralise le ratio 5:3 imposé aux iframes par le thème MyST et donne à
+   chaque figure interactive (classe .fig-<nom>) sa hauteur réelle.
+   ========================================================================== */
+figure[class*="fig-"] .relative.inline-block { padding-bottom: 0 !important; }
+figure[class*="fig-"] iframe { border-radius: 10px; }
+
+figure.fig-agents-contraste .relative.inline-block { height: 587px !important; }
+  details figure.fig-agents-contraste .relative.inline-block { height: 702px !important; }
+figure.fig-bpp .relative.inline-block { height: 461px !important; }
+  details figure.fig-bpp .relative.inline-block { height: 496px !important; }
+figure.fig-chronogramme .relative.inline-block { height: 505px !important; }
+  details figure.fig-chronogramme .relative.inline-block { height: 566px !important; }
+figure.fig-contraste-te .relative.inline-block { height: 516px !important; }
+  details figure.fig-contraste-te .relative.inline-block { height: 516px !important; }
+figure.fig-dephasage .relative.inline-block { height: 617px !important; }
+  details figure.fig-dephasage .relative.inline-block { height: 680px !important; }
+figure.fig-dixon-phase .relative.inline-block { height: 805px !important; }
+  details figure.fig-dixon-phase .relative.inline-block { height: 856px !important; }
+figure.fig-echo-gradient .relative.inline-block { height: 836px !important; }
+  details figure.fig-echo-gradient .relative.inline-block { height: 935px !important; }
+figure.fig-echo-spin .relative.inline-block { height: 610px !important; }
+  details figure.fig-echo-spin .relative.inline-block { height: 694px !important; }
+figure.fig-ernst .relative.inline-block { height: 583px !important; }
+  details figure.fig-ernst .relative.inline-block { height: 583px !important; }
+figure.fig-fse .relative.inline-block { height: 448px !important; }
+  details figure.fig-fse .relative.inline-block { height: 483px !important; }
+figure.fig-graisse-eau .relative.inline-block { height: 608px !important; }
+  details figure.fig-graisse-eau .relative.inline-block { height: 662px !important; }
+figure.fig-inversion .relative.inline-block { height: 526px !important; }
+  details figure.fig-inversion .relative.inline-block { height: 595px !important; }
+figure.fig-irm-virtuelle .relative.inline-block { height: 651px !important; }
+  details figure.fig-irm-virtuelle .relative.inline-block { height: 696px !important; }
+figure.fig-phase-dixon .relative.inline-block { height: 520px !important; }
+  details figure.fig-phase-dixon .relative.inline-block { height: 582px !important; }
+figure.fig-regime-permanent .relative.inline-block { height: 532px !important; }
+  details figure.fig-regime-permanent .relative.inline-block { height: 598px !important; }
+figure.fig-relaxation .relative.inline-block { height: 649px !important; }
+  details figure.fig-relaxation .relative.inline-block { height: 732px !important; }
+figure.fig-t2-t2prime .relative.inline-block { height: 658px !important; }
+  details figure.fig-t2-t2prime .relative.inline-block { height: 781px !important; }
+figure.fig-t2-vs-t2star .relative.inline-block { height: 455px !important; }
+  details figure.fig-t2-vs-t2star .relative.inline-block { height: 471px !important; }
+figure.fig-vecteur-m .relative.inline-block { height: 566px !important; }
+  details figure.fig-vecteur-m .relative.inline-block { height: 664px !important; }
+figure.fig-vecteur-m-libre .relative.inline-block { height: 579px !important; }
+  details figure.fig-vecteur-m-libre .relative.inline-block { height: 699px !important; }
+
+@media (max-width: 1023px) {
+  figure.fig-agents-contraste .relative.inline-block { height: 660px !important; }
+  details figure.fig-agents-contraste .relative.inline-block { height: 702px !important; }
+  figure.fig-bpp .relative.inline-block { height: 480px !important; }
+  details figure.fig-bpp .relative.inline-block { height: 496px !important; }
+  figure.fig-chronogramme .relative.inline-block { height: 550px !important; }
+  details figure.fig-chronogramme .relative.inline-block { height: 566px !important; }
+  figure.fig-contraste-te .relative.inline-block { height: 516px !important; }
+  details figure.fig-contraste-te .relative.inline-block { height: 516px !important; }
+  figure.fig-dephasage .relative.inline-block { height: 680px !important; }
+  details figure.fig-dephasage .relative.inline-block { height: 680px !important; }
+  figure.fig-dixon-phase .relative.inline-block { height: 840px !important; }
+  details figure.fig-dixon-phase .relative.inline-block { height: 856px !important; }
+  figure.fig-echo-gradient .relative.inline-block { height: 874px !important; }
+  details figure.fig-echo-gradient .relative.inline-block { height: 935px !important; }
+  figure.fig-echo-spin .relative.inline-block { height: 692px !important; }
+  details figure.fig-echo-spin .relative.inline-block { height: 694px !important; }
+  figure.fig-ernst .relative.inline-block { height: 583px !important; }
+  details figure.fig-ernst .relative.inline-block { height: 583px !important; }
+  figure.fig-fse .relative.inline-block { height: 483px !important; }
+  details figure.fig-fse .relative.inline-block { height: 483px !important; }
+  figure.fig-graisse-eau .relative.inline-block { height: 631px !important; }
+  details figure.fig-graisse-eau .relative.inline-block { height: 662px !important; }
+  figure.fig-inversion .relative.inline-block { height: 595px !important; }
+  details figure.fig-inversion .relative.inline-block { height: 595px !important; }
+  figure.fig-irm-virtuelle .relative.inline-block { height: 696px !important; }
+  details figure.fig-irm-virtuelle .relative.inline-block { height: 696px !important; }
+  figure.fig-phase-dixon .relative.inline-block { height: 537px !important; }
+  details figure.fig-phase-dixon .relative.inline-block { height: 582px !important; }
+  figure.fig-regime-permanent .relative.inline-block { height: 598px !important; }
+  details figure.fig-regime-permanent .relative.inline-block { height: 598px !important; }
+  figure.fig-relaxation .relative.inline-block { height: 716px !important; }
+  details figure.fig-relaxation .relative.inline-block { height: 732px !important; }
+  figure.fig-t2-t2prime .relative.inline-block { height: 793px !important; }
+  details figure.fig-t2-t2prime .relative.inline-block { height: 781px !important; }
+  figure.fig-t2-vs-t2star .relative.inline-block { height: 471px !important; }
+  details figure.fig-t2-vs-t2star .relative.inline-block { height: 471px !important; }
+  figure.fig-vecteur-m .relative.inline-block { height: 636px !important; }
+  details figure.fig-vecteur-m .relative.inline-block { height: 664px !important; }
+  figure.fig-vecteur-m-libre .relative.inline-block { height: 671px !important; }
+  details figure.fig-vecteur-m-libre .relative.inline-block { height: 699px !important; }
+}
+
+@media (max-width: 767px) {
+  figure.fig-agents-contraste .relative.inline-block { height: 1028px !important; }
+  details figure.fig-agents-contraste .relative.inline-block { height: 1028px !important; }
+  figure.fig-bpp .relative.inline-block { height: 776px !important; }
+  details figure.fig-bpp .relative.inline-block { height: 776px !important; }
+  figure.fig-chronogramme .relative.inline-block { height: 566px !important; }
+  details figure.fig-chronogramme .relative.inline-block { height: 566px !important; }
+  figure.fig-contraste-te .relative.inline-block { height: 933px !important; }
+  details figure.fig-contraste-te .relative.inline-block { height: 933px !important; }
+  figure.fig-dephasage .relative.inline-block { height: 956px !important; }
+  details figure.fig-dephasage .relative.inline-block { height: 1009px !important; }
+  figure.fig-dixon-phase .relative.inline-block { height: 881px !important; }
+  details figure.fig-dixon-phase .relative.inline-block { height: 947px !important; }
+  figure.fig-echo-gradient .relative.inline-block { height: 1258px !important; }
+  details figure.fig-echo-gradient .relative.inline-block { height: 1306px !important; }
+  figure.fig-echo-spin .relative.inline-block { height: 1063px !important; }
+  details figure.fig-echo-spin .relative.inline-block { height: 1082px !important; }
+  figure.fig-ernst .relative.inline-block { height: 645px !important; }
+  details figure.fig-ernst .relative.inline-block { height: 645px !important; }
+  figure.fig-fse .relative.inline-block { height: 1125px !important; }
+  details figure.fig-fse .relative.inline-block { height: 1153px !important; }
+  figure.fig-graisse-eau .relative.inline-block { height: 931px !important; }
+  details figure.fig-graisse-eau .relative.inline-block { height: 938px !important; }
+  figure.fig-inversion .relative.inline-block { height: 1004px !important; }
+  details figure.fig-inversion .relative.inline-block { height: 1004px !important; }
+  figure.fig-irm-virtuelle .relative.inline-block { height: 745px !important; }
+  details figure.fig-irm-virtuelle .relative.inline-block { height: 745px !important; }
+  figure.fig-phase-dixon .relative.inline-block { height: 582px !important; }
+  details figure.fig-phase-dixon .relative.inline-block { height: 599px !important; }
+  figure.fig-regime-permanent .relative.inline-block { height: 608px !important; }
+  details figure.fig-regime-permanent .relative.inline-block { height: 608px !important; }
+  figure.fig-relaxation .relative.inline-block { height: 1158px !important; }
+  details figure.fig-relaxation .relative.inline-block { height: 1216px !important; }
+  figure.fig-t2-t2prime .relative.inline-block { height: 1189px !important; }
+  details figure.fig-t2-t2prime .relative.inline-block { height: 1224px !important; }
+  figure.fig-t2-vs-t2star .relative.inline-block { height: 1145px !important; }
+  details figure.fig-t2-vs-t2star .relative.inline-block { height: 1145px !important; }
+  figure.fig-vecteur-m .relative.inline-block { height: 1053px !important; }
+  details figure.fig-vecteur-m .relative.inline-block { height: 1053px !important; }
+  figure.fig-vecteur-m-libre .relative.inline-block { height: 1053px !important; }
+  details figure.fig-vecteur-m-libre .relative.inline-block { height: 1053px !important; }
+}
+
+@media (max-width: 599px) {
+  figure.fig-agents-contraste .relative.inline-block { height: 1185px !important; }
+  details figure.fig-agents-contraste .relative.inline-block { height: 1185px !important; }
+  figure.fig-bpp .relative.inline-block { height: 967px !important; }
+  details figure.fig-bpp .relative.inline-block { height: 967px !important; }
+  figure.fig-chronogramme .relative.inline-block { height: 692px !important; }
+  details figure.fig-chronogramme .relative.inline-block { height: 710px !important; }
+  figure.fig-contraste-te .relative.inline-block { height: 978px !important; }
+  details figure.fig-contraste-te .relative.inline-block { height: 996px !important; }
+  figure.fig-dephasage .relative.inline-block { height: 1081px !important; }
+  details figure.fig-dephasage .relative.inline-block { height: 1116px !important; }
+  figure.fig-dixon-phase .relative.inline-block { height: 1114px !important; }
+  details figure.fig-dixon-phase .relative.inline-block { height: 1114px !important; }
+  figure.fig-echo-gradient .relative.inline-block { height: 1488px !important; }
+  details figure.fig-echo-gradient .relative.inline-block { height: 1565px !important; }
+  figure.fig-echo-spin .relative.inline-block { height: 1315px !important; }
+  details figure.fig-echo-spin .relative.inline-block { height: 1315px !important; }
+  figure.fig-ernst .relative.inline-block { height: 708px !important; }
+  details figure.fig-ernst .relative.inline-block { height: 725px !important; }
+  figure.fig-fse .relative.inline-block { height: 1214px !important; }
+  details figure.fig-fse .relative.inline-block { height: 1214px !important; }
+  figure.fig-graisse-eau .relative.inline-block { height: 1073px !important; }
+  details figure.fig-graisse-eau .relative.inline-block { height: 1073px !important; }
+  figure.fig-inversion .relative.inline-block { height: 1166px !important; }
+  details figure.fig-inversion .relative.inline-block { height: 1166px !important; }
+  figure.fig-irm-virtuelle .relative.inline-block { height: 826px !important; }
+  details figure.fig-irm-virtuelle .relative.inline-block { height: 862px !important; }
+  figure.fig-phase-dixon .relative.inline-block { height: 675px !important; }
+  details figure.fig-phase-dixon .relative.inline-block { height: 675px !important; }
+  figure.fig-regime-permanent .relative.inline-block { height: 788px !important; }
+  details figure.fig-regime-permanent .relative.inline-block { height: 823px !important; }
+  figure.fig-relaxation .relative.inline-block { height: 1412px !important; }
+  details figure.fig-relaxation .relative.inline-block { height: 1453px !important; }
+  figure.fig-t2-t2prime .relative.inline-block { height: 1513px !important; }
+  details figure.fig-t2-t2prime .relative.inline-block { height: 1513px !important; }
+  figure.fig-t2-vs-t2star .relative.inline-block { height: 1187px !important; }
+  details figure.fig-t2-vs-t2star .relative.inline-block { height: 1187px !important; }
+  figure.fig-vecteur-m .relative.inline-block { height: 1197px !important; }
+  details figure.fig-vecteur-m .relative.inline-block { height: 1288px !important; }
+  figure.fig-vecteur-m-libre .relative.inline-block { height: 1249px !important; }
+  details figure.fig-vecteur-m-libre .relative.inline-block { height: 1305px !important; }
+}
+
+/* Barre latérale : hauteur limitée à la fenêtre pour qu'elle défile seule */
+@media (min-width: 1280px) {
+  .myst-primary-sidebar { height: calc(100vh - 60px) !important; }
+  .myst-primary-sidebar-pointer { height: 100%; min-height: 0; }
+}
+.myst-primary-sidebar-nav { min-height: 0; overscroll-behavior: contain; }

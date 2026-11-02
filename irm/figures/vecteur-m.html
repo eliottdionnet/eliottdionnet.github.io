@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Longueur du vecteur aimantation</title>
+<link rel="stylesheet" href="lib/style.css">
+<style>
+  #traj { height: 300px; }
+  #ptm { height: 300px; }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; align-items: center; }
+  .presets .lab { font-size: 12px; color: var(--ink2); margin-right: 2px; }
+  .presets .btn.on { background: var(--wash); border-color: var(--accent); }
+  .story {
+    margin-top: 10px; padding: 9px 12px; border-radius: 10px;
+    background: var(--wash); border: 1px solid var(--border);
+    font-size: 13.5px; line-height: 1.5; color: var(--ink); min-height: 64px;
+  }
+  .story .step { display: inline-block; font-size: 11.5px; font-weight: 650; letter-spacing: .02em;
+    color: var(--accent); text-transform: uppercase; margin-right: 6px; }
+  .story.ko { background: color-mix(in srgb, var(--c-rouge) 10%, transparent); }
+  .story.ko .step { color: var(--c-rouge); }
+  .ro { margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="presets" id="pre"><span class="lab">Parcours guidé :</span></div>
+<div class="controls" id="ctl"></div>
+<div class="grid2">
+  <div class="card">
+    <h4>Pointe du vecteur M après un 90°</h4>
+    <div class="plot" id="traj"></div>
+    <div class="note" id="note">Zone bleutée : |M| ≤ M₀.</div>
+  </div>
+  <div class="card">
+    <h4>Les deux composantes et la longueur du vecteur</h4>
+    <div class="plot" id="ptm"></div>
+    <div class="readout ro" id="ro"></div>
+  </div>
+</div>
+<div class="story" id="story"></div>
+<script src="lib/ui.js"></script>
+<script>
+(function () {
+  // Par défaut (chapitre 1) : tissus réels, T2 ≤ T1.
+  // Avec « ?libre » (annexe A) : T2 peut dépasser T1 pour voir la borne géométrique T2 ≤ 2T1.
+  const LIBRE = /libre/.test(location.search + location.hash);
+  const P = { T1: 830, T2: 80 };
+  const DUREE = 6;                                   // s réelles pour parcourir l'axe du temps
+  let t = 0;
+
+  // ------------------------------------------------------------ modèle (90°, M en unités de M0)
+  const mxy = (tt) => Math.exp(-tt / P.T2);
+  const mz = (tt) => 1 - Math.exp(-tt / P.T1);
+  const mlen = (tt) => Math.hypot(mxy(tt), mz(tt));
+  const q = () => P.T2 / P.T1;
+  const tmax = () => {
+    const v = 2.5 * Math.max(P.T1, P.T2);
+    const s = Math.pow(10, Math.floor(Math.log10(v)));
+    return Math.ceil(v / (s / 2)) * (s / 2);
+  };
+  // extrema de |M| sur la fenêtre affichée
+  function extrema() {
+    const n = 4000, T = tmax();
+    let lo = { t: 0, m: 1 }, hi = { t: 0, m: 1 };
+    for (let i = 1; i <= n; i++) {
+      const tt = T * i / n, m = mlen(tt);
+      if (m < lo.m) lo = { t: tt, m };
+      if (m > hi.m) hi = { t: tt, m };
+    }
+    return { lo, hi };
+  }
+
+  // ------------------------------------------------------------ contrôles
+  const anim = new UI.Anim((dt) => {
+    t += dt * tmax() / DUREE;
+    if (t >= tmax()) { t = tmax(); sT.set(t, true); redraw(); return false; }
+    sT.set(t, true); redraw();
+  });
+  const bx = UI.el("div", { class: "row", style: "gap:6px;align-items:flex-end;flex:0 0 auto" });
+  UI.$("#ctl").appendChild(bx);
+  UI.playButton(bx, anim);
+  UI.button(bx, "↺", () => { anim.pause(); t = 0; sT.set(0, true); redraw(); }, "btn");
+
+  const arrondi = (v) => (v < 100 ? Math.round(v) : v < 1000 ? Math.round(v / 10) * 10 : Math.round(v / 50) * 50);
+  // hors mode libre, T2 ne dépasse jamais T1
+  const borner = () => { if (!LIBRE && P.T2 > P.T1) { P.T2 = P.T1; s2.set(P.T2, true); } };
+  const s1 = UI.slider("#ctl", { label: "T₁", min: 100, max: 5000, log: true, round: arrondi, value: P.T1, unit: "ms",
+    fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.T1 = v; borner(); changer(); } });
+  const s2 = UI.slider("#ctl", { label: LIBRE ? "T₂ (peut dépasser T₁)" : "T₂ (au plus T₁)", min: 10, max: LIBRE ? 20000 : 5000, log: true, round: arrondi, value: P.T2, unit: "ms",
+    fmt: (v) => UI.fmt(v, 0), onInput: (v) => { P.T2 = v; borner(); changer(); } });
+  const sT = UI.slider("#ctl", { label: "Temps après le 90°", min: 0, max: tmax(), step: 1, value: 0, unit: "ms",
+    fmt: (v) => UI.fmt(v, 0), onInput: (v) => { anim.pause(); t = v; redraw(); } });
+
+  const PRESETS = LIBRE ? [
+    ["① Substance blanche, T₂ ≪ T₁", { T1: 830, T2: 80 }],
+    ["② Liquide pur, T₂ = T₁", { T1: 3000, T2: 3000 }],
+    ["③ T₂ = 1,5 T₁", { T1: 600, T2: 900 }],
+    ["④ T₂ = 10 T₁", { T1: 400, T2: 4000 }],
+  ] : [
+    ["① Substance blanche, T₂ ≪ T₁", { T1: 830, T2: 80 }],
+    ["② LCR, T₂ = T₁ / 2", { T1: 4000, T2: 2000 }],
+    ["③ Liquide pur, T₂ = T₁", { T1: 3000, T2: 3000 }],
+  ];
+  if (LIBRE) UI.$("#note").textContent = "Zone bleutée : |M| ≤ M₀. Le trait rouge marque une pointe sortie du cercle.";
+  const preBtns = PRESETS.map(([lab, o]) => UI.button("#pre", lab, () => {
+    anim.pause(); Object.assign(P, o); s1.set(P.T1, true); s2.set(P.T2, true);
+    majAxe(); t = 0; sT.set(0, true); redraw(); anim.play();
+  }, "btn"));
+
+  // le curseur de temps suit la durée affichée
+  function majAxe() {
+    const T = tmax();
+    sT.input.max = T; sT.input.step = T / 1000;
+    pt.x = { min: 0, max: T, label: "t (ms)" };
+    if (t > T) t = T;
+  }
+  function changer() {
+    anim.pause();
+    majAxe();
+    t = tmax(); sT.set(t, true);
+    redraw();
+  }
+
+  // ------------------------------------------------------------ trajectoire de la pointe
+  const ct = UI.canvas("#traj", drawTraj);
+  function drawTraj(ctx, w, h) {
+    const ex = extrema();
+    const R = Math.max(1.15, ex.hi.m * 1.06);           // étendue des axes en unités de M0
+    const pad = { l: 34, r: 16, t: 14, b: 40 };
+    const s = Math.min(w - pad.l - pad.r, h - pad.t - pad.b) / R;
+    const ox = pad.l + (w - pad.l - pad.r - s * R) / 2, oy = h - pad.b;
+    const X = (v) => ox + s * v, Y = (v) => oy - s * v;
+    const ink = UI.css("--ink"), muted = UI.css("--muted"), rouge = UI.css("--c-rouge");
+
+    // zone permise : quart de disque de rayon M0
+    ctx.fillStyle = UI.css("--wash");
+    ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.arc(X(0), Y(0), s, -Math.PI / 2, 0); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = UI.css("--axis"); ctx.lineWidth = 1.2; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.arc(X(0), Y(0), s, -Math.PI / 2, 0); ctx.stroke(); ctx.setLineDash([]);
+    const a = 0.25 * Math.PI;
+    UI.text(ctx, "|M| = M₀", X(Math.cos(a)) + 6, Y(Math.sin(a)) - 6, { color: muted, size: 11, halo: true });
+
+    // axes
+    UI.arrow(ctx, X(0), Y(0), X(R), Y(0), UI.css("--axis"), 1.3, 7);
+    UI.arrow(ctx, X(0), Y(0), X(0), Y(R), UI.css("--axis"), 1.3, 7);
+    UI.text(ctx, "Mxy / M₀", X(R / 2), Y(0) + 27, { align: "center", color: UI.css("--ink2"), size: 12 });
+    UI.text(ctx, "Mz / M₀", X(0) + 6, Y(R) + 2, { color: UI.css("--ink2"), size: 12 });
+    [0.5, 1].forEach((v) => {
+      UI.text(ctx, UI.fmt(v, 1), X(v), Y(0) + 11, { align: "center", color: muted, size: 11 });
+      UI.text(ctx, UI.fmt(v, 1), X(0) - 6, Y(v), { align: "right", color: muted, size: 11 });
+    });
+
+    // repères : la droite (T₂ = T₁) et la parabole (T₂ = 2T₁), frontière des trajectoires possibles
+    const ref = (g) => { ctx.beginPath(); for (let i = 0; i <= 60; i++) { const x = i / 60; i ? ctx.lineTo(X(x), Y(g(x))) : ctx.moveTo(X(x), Y(g(x))); } ctx.stroke(); };
+    ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.globalAlpha = 0.7; ctx.setLineDash([1.5, 3.5]);
+    ref((x) => 1 - x); if (LIBRE) ref((x) => 1 - x * x);
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+    UI.text(ctx, "T₂ = T₁", X(0.3) - 6, Y(0.7) - 2, { align: "right", color: muted, size: 10.5, halo: true });
+    if (LIBRE) UI.text(ctx, "T₂ = 2T₁", X(0.5) + 5, Y(0.75) - 6, { color: muted, size: 10.5, halo: true });
+
+    // trajectoire complète (en filigrane) puis parcourue jusqu'à t
+    const T = tmax(), n = 700;
+    const pts = (t1) => { const out = []; for (let i = 0; i <= n; i++) { const tt = t1 * i / n; out.push([mxy(tt), mz(tt)]); } return out; };
+    const tracer = (ps, col, wd, alpha, dash) => {
+      ctx.strokeStyle = col; ctx.lineWidth = wd; ctx.globalAlpha = alpha; ctx.setLineDash(dash || []);
+      ctx.lineJoin = "round"; ctx.lineCap = "round";
+      ctx.beginPath(); ps.forEach((p, i) => (i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])))); ctx.stroke();
+      ctx.globalAlpha = 1; ctx.setLineDash([]);
+    };
+    tracer(pts(T * 4), ink, 1.2, 0.35, [3, 4]);
+    const parc = pts(t);
+    tracer(parc, ink, 2.2, 1);
+    // morceaux hors du cercle en rouge
+    ctx.strokeStyle = rouge; ctx.lineWidth = 3.4; ctx.lineCap = "round";
+    for (let i = 1; i < parc.length; i++) {
+      const [x0, y0] = parc[i - 1], [x1, y1] = parc[i];
+      if (Math.hypot(x1, y1) > 1.0005 && Math.hypot(x0, y0) > 1.0005) {
+        ctx.beginPath(); ctx.moveTo(X(x0), Y(y0)); ctx.lineTo(X(x1), Y(y1)); ctx.stroke();
+      }
+    }
+
+    // repères départ / équilibre
+    UI.text(ctx, "départ", X(1) + 5, Y(0) - 10, { color: muted, size: 11, halo: true });
+    ctx.fillStyle = muted; ctx.beginPath(); ctx.arc(X(1), Y(0), 3, 0, 2 * Math.PI); ctx.fill();
+    ctx.beginPath(); ctx.arc(X(0), Y(1), 3, 0, 2 * Math.PI); ctx.fill();
+    UI.text(ctx, "équilibre", X(0) + 7, Y(1) + 11, { color: muted, size: 11, halo: true });
+
+    // vecteur courant
+    const vx = mxy(t), vy = mz(t), m = Math.hypot(vx, vy), hors = m > 1.0005;
+    UI.arrow(ctx, X(0), Y(0), X(vx), Y(vy), hors ? rouge : UI.css("--m-sum"), 2.6, 9);
+    UI.text(ctx, "t = " + UI.fmt(t, 0) + " ms", w - 8, 12, { align: "right", color: ink, size: 12.5, weight: "600" });
+    UI.text(ctx, "|M| = " + UI.fmt(m, 2) + " M₀", w - 8, 30, { align: "right", color: hors ? rouge : ink, size: 12.5, weight: "600" });
+  }
+
+  // ------------------------------------------------------------ courbes temporelles
+  const cm = UI.canvas("#ptm", drawTemps);
+  const pt = new UI.Plot(cm, { x: { min: 0, max: tmax(), label: "t (ms)" }, y: { min: 0, max: 1.1, label: "aimantation / M₀" },
+    pad: { l: 46, r: 40, t: 10, b: 34 } });
+  const series = () => [
+    { name: "Mxy", color: UI.css("--neg"), f: mxy },
+    { name: "Mz", color: UI.css("--c-violet"), f: mz },
+    { name: "|M|", color: UI.css("--m-sum"), f: mlen },
+  ];
+  pt.hoverable(cm, series, { xName: "t (ms)", x: (v) => UI.fmt(v, 0), y: (v) => UI.fmt(v, 2) });
+  function drawTemps(ctx, w, h) {
+    const ex = extrema();
+    pt.y = { min: 0, max: Math.max(1.1, Math.ceil(ex.hi.m * 1.08 * 10) / 10), label: "aimantation / M₀" };
+    pt.frame(ctx, w, h);
+    // dépassement de M0 en rouge
+    const T = pt.x.max, n = 600, xs = [], y0 = [], y1 = [];
+    for (let i = 0; i <= n; i++) { const tt = T * i / n, m = mlen(tt); xs.push(tt); y0.push(1); y1.push(Math.max(1, m)); }
+    pt.area(xs, y0, y1, UI.css("--c-rouge"), 0.28);
+    pt.hline(1, { color: UI.css("--muted"), dash: [3, 4], width: 1, label: "M₀" });
+    const ser = series();
+    ser.forEach((s) => pt.func(s.f, { color: s.color, width: s.name === "|M|" ? 2.6 : 2, n: 600 }));
+    pt.endLabels(ser, T);
+    pt.vline(t, { color: UI.css("--ink"), width: 1.2 });
+    ser.forEach((s) => pt.dot(t, s.f(t), { color: s.color, r: 4 }));
+    pt.drawHover();
+  }
+
+  // ------------------------------------------------------------ texte
+  const f2 = (v) => UI.fmt(v, 2);
+  const f0 = (v) => UI.fmt(v, 0);
+  function story() {
+    const r = q(), ex = extrema(), el = UI.$("#story");
+    let step, txt, ko = false;
+    if (r < 0.98) {
+      step = "T₂ < T₁";
+      txt = `Mxy disparaît en quelques T₂ alors que Mz met plusieurs T₁ à repousser. La pointe file donc vers l'origine puis remonte le long de z. Au plus court, vers t = ${f0(ex.lo.t)} ms, le vecteur ne mesure que ${f2(ex.lo.m)} M₀. C'est le cas de tous les tissus.`;
+    } else if (r <= 1.02) {
+      step = "T₂ = T₁";
+      txt = "Les deux composantes évoluent au même rythme. Mxy + Mz vaut toujours M₀ et la pointe suit la droite qui relie le départ à l'équilibre. C'est le cas limite des liquides purs.";
+    } else if (r <= 2) {
+      step = "T₁ < T₂ ≤ 2T₁";
+      txt = "La pointe passe au-dessus de la droite mais reste dans le quart de cercle. |M| ne dépasse jamais M₀, la géométrie n'interdit donc pas ce cas. On ne le rencontre pourtant jamais dans les tissus, car le mécanisme de relaxation entre protons voisins impose T₂ ≤ T₁.";
+    } else if (ex.hi.m > 1.002) {
+      step = "T₂ > 2T₁"; ko = true;
+      txt = `Mxy survit plus longtemps que la repousse de Mz ne le permet. Vers t = ${f0(ex.hi.t)} ms le vecteur atteint ${f2(ex.hi.m)} M₀ et la pointe sort du cercle. La relaxation aurait aligné plus de spins que l'équilibre lui-même. Ce réglage est physiquement impossible.`;
+    } else {
+      step = "T₂ > 2T₁"; ko = true;
+      txt = "Le vecteur finit par dépasser M₀, mais de très peu et très tard. Allongez encore T₂ pour bien voir la pointe sortir du cercle.";
+    }
+    el.className = "story" + (ko ? " ko" : "");
+    el.innerHTML = `<span class="step">${step}</span>${txt}`;
+  }
+  function readout() {
+    UI.$("#ro").innerHTML = `T₂/T₁ = ${UI.fmtAuto(q())} · à t = ${f0(t)} ms : Mxy = ${f2(mxy(t))}, Mz = ${f2(mz(t))}, |M| = ${f2(mlen(t))} M₀`;
+  }
+
+  function redraw() {
+    ct.redraw(); cm.redraw(); readout(); story();
+    preBtns.forEach((b, i) => b.classList.toggle("on", PRESETS[i][1].T1 === P.T1 && PRESETS[i][1].T2 === P.T2));
+  }
+  majAxe(); t = tmax(); sT.set(t, true); redraw();
+
+  // accès pour les captures (outils/captures.py)
+  window.__etat = (o, tt) => { anim.pause(); Object.assign(P, o); s1.set(P.T1, true); s2.set(P.T2, true); majAxe(); t = tt == null ? tmax() : tt; sT.set(t, true); redraw(); };
+})();
+</script>
+</body>
+</html>
