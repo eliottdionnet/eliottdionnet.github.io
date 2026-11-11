@@ -1,0 +1,31 @@
+% Préambule commun aux rapports. Définir \langue (french ou english) avant de l'inclure.
+\documentclass[10pt,a4paper,twocolumn]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[\langue]{babel}
+\usepackage[a4paper,hmargin=1.5cm,top=1.5cm,bottom=2cm]{geometry}
+\usepackage{amsmath,amssymb,graphicx,booktabs,enumitem,microtype}
+\usepackage[font=small,skip=6pt]{caption}
+\usepackage[hidelinks]{hyperref}
+\setlength{\columnsep}{0.85cm}
+\setlist{leftmargin=1.2em,itemsep=1pt,topsep=3pt,parsep=0pt}
+\newcommand{\pa}[1]{\par\smallskip\noindent\textbf{#1}\enspace}
+\newcommand{\ket}[1]{\lvert #1\rangle}
+\newcommand{\en}[1]{\emph{#1}}
+% \entete{titre}{sous-titre}{cadre}{auteurs et lignes suivantes}{nom du résumé}{résumé}
+\newcommand{\entete}[6]{%
+\twocolumn[\begin{center}
+{\LARGE\bfseries #1\par}\vspace{6pt}
+{\large #2\par}\vspace{10pt}
+{\large\bfseries #3\par}\vspace{2pt}
+{#4\par}
+\end{center}
+\vspace{4pt}
+\begin{center}\begin{minipage}{0.9\textwidth}
+\begin{center}\bfseries #5\end{center}\vspace{-4pt}
+\small #6
+\end{minipage}\end{center}
+\vspace{14pt}]}
+\frenchspacing
+\raggedbottom
