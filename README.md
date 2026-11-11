@@ -1,6 +1,17 @@
-# eliottdionnet.github.io
+# Eliott Dionnet
 
-Site personnel d'Eliott Dionnet : page d'accueil, portfolio, rapports et livre interactif *Contraste en IRM*.
+### 👉 Le site est ici : **[eliottdionnet.github.io](https://eliottdionnet.github.io/)**
+
+Ce dépôt ne contient que le code source du site. Pour le consulter, suivez plutôt ces liens :
+
+| | |
+|---|---|
+| [Accueil](https://eliottdionnet.github.io/) | Tous les projets, classés par thème |
+| [Portfolio](https://eliottdionnet.github.io/portfolio/) | Parcours, projets et expériences |
+| [Contraste en IRM](https://eliottdionnet.github.io/irm/) | Livre interactif |
+| [CV](https://eliottdionnet.github.io/accueil/cv-eliott-dionnet.pdf) | PDF |
+
+## À propos du dépôt
 
 Site statique servi par GitHub Pages, sans étape de compilation.
 
